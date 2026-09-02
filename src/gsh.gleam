@@ -1,7 +1,16 @@
 import gleam/erlang/atom
 import gleam/format
 import gleam/io
+import gleam/list
+import gleam/option
+import gsh/evaluator
 import in
+
+// GSH keeps shell information immutable and passes the updated
+//  state into the next REPL iteration
+type ShellState {
+  ShellState(prompt_count: Int, bindings: List(String))
+}
 
 // --- FFI Bridges --
 // GSH uses this small Erlang bridges to inspect the BEAM runtime it is running on
@@ -18,7 +27,7 @@ pub fn main() -> Nil {
   // Print the banner.
   banner()
   // Start the REPL.
-  shell_loop(1)
+  shell_loop(ShellState(1, []))
 }
 
 fn banner() -> Nil {
@@ -31,14 +40,21 @@ fn banner() -> Nil {
   io.println("")
 }
 
-fn shell_loop(prompt_count: Int) -> Nil {
-  format.printf("gsh(~b)> ", prompt_count)
+fn shell_loop(state: ShellState) -> Nil {
+  format.printf("gsh(~b)> ", state.prompt_count)
 
   case in.read_line() {
     Ok(input) -> {
-      io.print(input)
-      shell_loop(prompt_count + 1)
+      let result = evaluator.evaluate(input, state.bindings)
+      io.print(result.output)
+      let bindings = case result.new_binding {
+        option.Some(binding) -> list.append(state.bindings, [binding])
+        option.None -> state.bindings
+      }
+
+      shell_loop(ShellState(state.prompt_count + 1, bindings))
     }
+    // TODO: Handle error by looping with last good state
     Error(_) -> Nil
   }
 }
