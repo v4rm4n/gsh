@@ -3,27 +3,42 @@ import gleam/string
 import shellout
 import simplifile
 
-const evaluator_path = "src/gsh_eval.gleam"
+const evaluator_path = "test/gsh_eval.gleam"
+
+pub type Binding {
+  Binding(source: String, reference: String)
+}
 
 // GSH returns both the visible evaluation output and, when applicable,
 // a successfully compiled binding that should persist in the REPL session.
 pub type Evaluation {
-  Evaluation(output: String, new_binding: Option(String))
+  Evaluation(output: String, new_binding: Option(Binding))
 }
 
-pub fn evaluate(input: String, bindings: List(String)) -> Evaluation {
+pub fn evaluate(input: String, bindings: List(Binding)) -> Evaluation {
   let input = string.trim(input)
 
-  let is_binding = string.starts_with(input, "let ")
+  let parsed_binding = case string.starts_with(input, "let ") {
+    True -> parse_binding(input)
+    False -> None
+  }
 
-  let source = case is_binding {
-    True -> make_binding_source(input, bindings)
+  let source = case parsed_binding {
+    Some(binding) -> make_binding_source(binding, bindings)
 
-    False -> make_expression_source(input, bindings)
+    None -> make_expression_source(input, bindings)
   }
 
   case simplifile.write(to: evaluator_path, contents: source) {
-    Ok(_) -> run_evaluator(input, is_binding)
+    Ok(_) -> {
+      let result = run_evaluator(parsed_binding)
+
+      // GSH removes generated evaluator source after execution so
+      // temporary REPL state never becomes permanent project code.
+      let _ = simplifile.delete_all(paths: [evaluator_path])
+
+      result
+    }
 
     Error(_) ->
       Evaluation(
@@ -35,7 +50,7 @@ pub fn evaluate(input: String, bindings: List(String)) -> Evaluation {
 
 // Run the generated evaluator using shellout rather than a custom
 // Erlang os:cmd bridge, giving GSH structured process errors.
-fn run_evaluator(input: String, is_binding: Bool) -> Evaluation {
+fn run_evaluator(new_binding: Option(Binding)) -> Evaluation {
   case
     shellout.command(
       run: "gleam",
@@ -49,16 +64,25 @@ fn run_evaluator(input: String, is_binding: Bool) -> Evaluation {
       opt: [],
     )
   {
-    Ok(output) -> {
-      let new_binding = case is_binding {
-        True -> Some(input)
-        False -> None
-      }
-
-      Evaluation(output: output, new_binding: new_binding)
-    }
+    Ok(output) -> Evaluation(output: output, new_binding: new_binding)
 
     Error(#(_status, output)) -> Evaluation(output: output, new_binding: None)
+  }
+}
+
+// Parse the simple `let name = value` form supported by the
+// first GSH binding implementation.
+fn parse_binding(input: String) -> Option(Binding) {
+  let without_let = string.remove_prefix(from: input, matching: "let ")
+
+  case string.split_once(without_let, on: "=") {
+    Ok(#(reference, _value)) -> {
+      let reference = string.trim(reference)
+
+      Some(Binding(source: input, reference:))
+    }
+
+    Error(_) -> None
   }
 }
 
@@ -66,7 +90,7 @@ fn run_evaluator(input: String, is_binding: Bool) -> Evaluation {
 // while replaying bindings already stored in this GSH session.
 fn make_expression_source(
   expression: String,
-  bindings: List(String),
+  bindings: List(Binding),
 ) -> String {
   "import gleam/io\n"
   <> "import gleam/string\n"
@@ -83,37 +107,34 @@ fn make_expression_source(
 
 // Generate a temporary module for evaluating a new let binding,
 // printing the resulting value if compilation succeeds.
-fn make_binding_source(binding: String, bindings: List(String)) -> String {
-  let without_let = string.remove_prefix(from: binding, matching: "let ")
-
-  case string.split_once(without_let, on: "=") {
-    Ok(#(name, _value)) -> {
-      let variable_name = string.trim(name)
-
-      "import gleam/io\n"
-      <> "import gleam/string\n"
-      <> "\n"
-      <> "pub fn main() {\n"
-      <> bindings_source(bindings)
-      <> "  "
-      <> binding
-      <> "\n"
-      <> "  io.println(string.inspect("
-      <> variable_name
-      <> "))\n"
-      <> "}\n"
-    }
-
-    Error(_) -> make_expression_source(binding, bindings)
-  }
+fn make_binding_source(binding: Binding, bindings: List(Binding)) -> String {
+  "import gleam/io\n"
+  <> "import gleam/string\n"
+  <> "\n"
+  <> "pub fn main() {\n"
+  <> bindings_source(bindings)
+  <> "  "
+  <> binding.source
+  <> "\n"
+  <> "  io.println(string.inspect("
+  <> binding.reference
+  <> "))\n"
+  <> "}\n"
 }
 
 // Convert the successful bindings from the current GSH session
 // back into Gleam source before compiling the next expression.
-fn bindings_source(bindings: List(String)) -> String {
+fn bindings_source(bindings: List(Binding)) -> String {
   case bindings {
     [] -> ""
 
-    _ -> "  " <> string.join(bindings, with: "\n  ") <> "\n"
+    [binding, ..rest] ->
+      "  "
+      <> binding.source
+      <> "\n"
+      <> "  let _ = "
+      <> binding.reference
+      <> "\n"
+      <> bindings_source(rest)
   }
 }

@@ -9,7 +9,7 @@ import in
 // GSH keeps shell information immutable and passes the updated
 //  state into the next REPL iteration
 type ShellState {
-  ShellState(prompt_count: Int, bindings: List(String))
+  ShellState(prompt_count: Int, bindings: List(evaluator.Binding))
 }
 
 // --- FFI Bridges --
