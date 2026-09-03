@@ -65,7 +65,7 @@ fn parse_binding(source: String) -> Option(Binding) {
         kind: kind,
         source: source,
         pattern: pattern,
-        reference: reference,
+        name: reference,
         value: value,
       ))
     }
@@ -146,8 +146,8 @@ fn make_normal_binding_source(
   binding: Binding,
   bindings: List(Binding),
 ) -> String {
-  case binding.reference {
-    Some(reference) ->
+  case binding.name {
+    Some(name) ->
       source.header(True)
       <> "pub fn main() {\n"
       <> bindings_source(bindings)
@@ -155,7 +155,7 @@ fn make_normal_binding_source(
       <> binding.source
       <> "\n"
       <> "  io.println(string.inspect("
-      <> reference
+      <> name
       <> "))\n"
       <> "}\n"
 
@@ -194,16 +194,13 @@ fn make_complex_binding_source(
   <> "}\n"
 }
 
-// Replay successful bindings in their original order.
-// Simple named bindings are marked as intentionally used so GSH's
-// replay mechanism does not create artificial compiler warnings.
 fn bindings_source(bindings: List(Binding)) -> String {
   case bindings {
     [] -> ""
 
     [binding, ..rest] -> {
-      let mark_used = case binding.reference {
-        Some(reference) -> "  let _ = " <> reference <> "\n"
+      let mark_used = case binding.name {
+        Some(name) -> "  let _ = " <> name <> "\n"
 
         None -> ""
       }

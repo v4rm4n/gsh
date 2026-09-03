@@ -11,8 +11,8 @@ pub type Binding {
   Binding(
     kind: BindingKind,
     source: String,
+    name: Option(String),
     pattern: String,
-    reference: Option(String),
     value: String,
   )
 }
