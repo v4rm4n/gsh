@@ -1,27 +1,20 @@
+// src/gsh.gleam
+
 import gleam/erlang/atom
 import gleam/format
 import gleam/io
 import gleam/list
 import gleam/option
-import gsh/evaluator
+import gsh/evaluator/binding
+import gsh/evaluator/evaluator
+import gsh/runtime/runtime.{app_version, system_version}
 import in
 
 // GSH keeps shell information immutable and passes the updated
 //  state into the next REPL iteration
 type ShellState {
-  ShellState(prompt_count: Int, bindings: List(evaluator.Binding))
+  ShellState(prompt_count: Int, bindings: List(binding.Binding))
 }
-
-// --- FFI Bridges --
-// GSH uses this small Erlang bridges to inspect the BEAM runtime it is running on
-// and the app version as well.
-@external(erlang, "gsh_ffi", "system_version")
-fn system_version() -> String
-
-@external(erlang, "gsh_ffi", "app_version")
-fn app_version(app_name: atom.Atom) -> String
-
-// --- FFI Bridges --
 
 pub fn main() -> Nil {
   // Print the banner.

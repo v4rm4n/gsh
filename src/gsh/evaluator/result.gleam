@@ -1,0 +1,19 @@
+// src/gsh/evaluator/result.gleam
+
+import gleam/option.{type Option}
+import gsh/evaluator/binding.{type Binding}
+
+pub type Evaluation {
+  Evaluation(
+    output: String,
+    success: Bool,
+    error_kind: ErrorKind,
+    new_binding: Option(Binding),
+  )
+}
+
+pub type ErrorKind {
+  NoError
+  CompileError
+  RuntimeError
+}

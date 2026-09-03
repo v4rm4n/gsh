@@ -1,4 +1,4 @@
--module(gsh_ffi).
+-module(ffi).
 
 -export([
     system_version/0,

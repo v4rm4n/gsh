@@ -1,31 +1,15 @@
+// src/gsh/evaluator/evaluator.gleam
+
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import shellout
+import gsh/evaluator/binding.{type Binding, Binding, Let, LetAssert}
+import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation}
+import gsh/evaluator/runner.{run}
+import gsh/evaluator/source
 import simplifile
 
 const evaluator_path = "test/gsh_eval.gleam"
-
-pub type BindingKind {
-  Let
-  LetAssert
-}
-
-pub type Binding {
-  Binding(
-    kind: BindingKind,
-    source: String,
-    pattern: String,
-    reference: Option(String),
-    value: String,
-  )
-}
-
-// GSH returns both the visible evaluation output and, when applicable,
-// a successfully compiled binding that should persist in the REPL session.
-pub type Evaluation {
-  Evaluation(output: String, new_binding: Option(Binding))
-}
 
 pub fn evaluate(input: String, bindings: List(Binding)) -> Evaluation {
   let input = string.trim(input)
@@ -43,10 +27,8 @@ pub fn evaluate(input: String, bindings: List(Binding)) -> Evaluation {
 
   case simplifile.write(to: evaluator_path, contents: source) {
     Ok(_) -> {
-      let result = run_evaluator(parsed_binding)
+      let result = run(parsed_binding)
 
-      // Remove generated evaluator code after each command so REPL
-      // session implementation details never persist in the project.
       let _ = simplifile.delete_all(paths: [evaluator_path])
 
       result
@@ -55,40 +37,13 @@ pub fn evaluate(input: String, bindings: List(Binding)) -> Evaluation {
     Error(_) ->
       Evaluation(
         output: "GSH could not create the evaluator module.\n",
+        success: False,
+        error_kind: CompileError,
         new_binding: None,
       )
   }
 }
 
-// Run the generated Gleam module and only persist a binding when
-// compilation and execution complete successfully.
-fn run_evaluator(new_binding: Option(Binding)) -> Evaluation {
-  case
-    shellout.command(
-      run: "gleam",
-      with: [
-        "run",
-        "--module",
-        "gsh_eval",
-        "--no-print-progress",
-      ],
-      in: ".",
-      opt: [],
-    )
-  {
-    Ok(output) -> Evaluation(output: output, new_binding: new_binding)
-
-    Error(#(_status, output)) -> Evaluation(output: output, new_binding: None)
-  }
-}
-
-// Parse the current prototype forms:
-//
-//   let x = value
-//   let x: Type = value
-//
-// Complex Gleam patterns are still passed through to the real
-// compiler, but GSH only extracts a reusable reference for simple names.
 fn parse_binding(source: String) -> Option(Binding) {
   let #(kind, without_let) = case string.starts_with(source, "let assert ") {
     True -> #(
@@ -119,12 +74,6 @@ fn parse_binding(source: String) -> Option(Binding) {
   }
 }
 
-// Extract the reusable variable name from either:
-//
-//   x
-//   x: Int
-//
-// Anything more complex is left to the Gleam compiler.
 fn extract_simple_reference(pattern: String) -> Option(String) {
   case string.split_once(pattern, on: ":") {
     Ok(#(name, _type_annotation)) -> {
@@ -174,9 +123,7 @@ fn make_expression_source(
   expression: String,
   bindings: List(Binding),
 ) -> String {
-  "import gleam/io\n"
-  <> "import gleam/string\n"
-  <> "\n"
+  source.header(True)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  io.println(string.inspect(\n"
@@ -201,9 +148,7 @@ fn make_normal_binding_source(
 ) -> String {
   case binding.reference {
     Some(reference) ->
-      "import gleam/io\n"
-      <> "import gleam/string\n"
-      <> "\n"
+      source.header(True)
       <> "pub fn main() {\n"
       <> bindings_source(bindings)
       <> "  "
@@ -219,17 +164,13 @@ fn make_normal_binding_source(
 }
 
 fn make_assert_source(binding: Binding, bindings: List(Binding)) -> String {
-  "import gleam/io\n"
-  <> "import gleam/string\n"
-  <> "\n"
+  source.header(False)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  "
   <> binding.source
   <> "\n"
-  <> "  io.println(string.inspect("
-  <> binding.pattern
-  <> "))\n"
+  <> "  io.println(\"ok\")\n"
   <> "}\n"
 }
 
@@ -240,9 +181,7 @@ fn make_complex_binding_source(
   binding: Binding,
   bindings: List(Binding),
 ) -> String {
-  "import gleam/io\n"
-  <> "import gleam/string\n"
-  <> "\n"
+  source.header(True)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  let gsh_value = "
