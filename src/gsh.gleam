@@ -71,7 +71,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
     command.NotCommand -> {
       let result = evaluator.evaluate(input, state.bindings)
 
-      io.print(result.output)
+      terminal.print(result.output)
 
       let bindings = case result.new_binding {
         option.Some(binding) -> list.append(state.bindings, [binding])

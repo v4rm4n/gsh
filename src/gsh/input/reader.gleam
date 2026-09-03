@@ -1,26 +1,12 @@
-// src/input/reader.gleam
-
-import gsh/runtime/runtime
-
 import gsh/input/key.{
   type Key, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character,
   Enter, Unknown,
 }
+import gsh/runtime/runtime
 
 pub fn read_key() -> Key {
   case runtime.get_char() {
-    "\r" -> {
-      // Windows console in line mode delivers "\r\n" as one unit for Enter.
-      // On Unix this branch is never hit — ICRNL already turns \r into \n
-      // before we see it — so this peek can't block waiting on a keystroke.
-      case runtime.get_char() {
-        "\n" -> Nil
-        other -> runtime.pushback(other)
-        // see note below
-      }
-      Enter
-    }
-
+    "\r" -> Enter
     "\n" -> Enter
     "\u{007f}" -> Backspace
     "\u{001b}" -> read_escape()
@@ -29,22 +15,29 @@ pub fn read_key() -> Key {
 }
 
 fn read_escape() -> Key {
-  let second = runtime.get_char()
+  case runtime.get_char_timeout(50) {
+    Ok("[") ->
+      case runtime.get_char_timeout(50) {
+        Ok("A") -> ArrowUp
+        Ok("B") -> ArrowDown
+        Ok("C") -> ArrowRight
+        Ok("D") -> ArrowLeft
 
-  case second {
-    "[" -> {
-      let third = runtime.get_char()
+        Ok(other) -> {
+          runtime.pushback(other)
+          Unknown
+        }
 
-      case third {
-        "A" -> ArrowUp
-        "B" -> ArrowDown
-        "C" -> ArrowRight
-        "D" -> ArrowLeft
-
-        _ -> Unknown
+        Error(_) -> Unknown
       }
+
+    Ok(other) -> {
+      runtime.pushback(other)
+      Unknown
     }
 
-    _ -> Unknown
+    Error(_) -> Unknown
+    // No continuation bytes within 50ms → treat as a bare Escape keypress,
+    // not a stuck read.
   }
 }

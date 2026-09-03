@@ -14,6 +14,9 @@ pub fn get_char() -> String
 @external(erlang, "ffi", "pushback")
 pub fn pushback(char: String) -> Nil
 
+@external(erlang, "ffi", "get_char_timeout")
+pub fn get_char_timeout(timeout_ms: Int) -> Result(String, Nil)
+
 pub fn enable_raw_mode() -> Result(Nil, tty.TerminalError) {
   tty.enter_raw()
 }

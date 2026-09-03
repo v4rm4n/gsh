@@ -2,6 +2,7 @@
 
 import gleam/int
 import gleam/io
+import gleam/string
 
 // Terminal control sequences.
 // Keeping ANSI handling isolated here so editor logic does not depend on escape codes.
@@ -33,6 +34,12 @@ pub fn show_cursor() -> Nil {
 fn int_to_string(value: Int) -> String {
   // temporary until we import gleam/int
   int.to_string(value)
+}
+
+pub fn print(text: String) -> Nil {
+  text
+  |> string.replace(each: "\n", with: "\r\n")
+  |> io.print()
 }
 
 pub fn println(text: String) -> Nil {
