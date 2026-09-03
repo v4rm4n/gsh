@@ -2,6 +2,7 @@
 
 import gleam/erlang/atom
 import gleam/format
+import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option
@@ -9,6 +10,7 @@ import gleam/string
 import gsh/command/router as command
 import gsh/evaluator/binding
 import gsh/evaluator/evaluator
+import gsh/input/buffer
 import gsh/runtime/runtime.{app_version, system_version}
 import in
 
@@ -39,45 +41,62 @@ fn banner() -> Nil {
   io.println("")
 }
 
-fn shell_loop(state: ShellState) -> Nil {
-  format.printf("gsh(~b)> ", state.prompt_count)
+fn read_command(prompt: String, current_buffer: String) -> String {
+  case current_buffer {
+    "" -> io.print(prompt)
+    _ -> io.print("...> ")
+  }
 
   case in.read_line() {
-    Ok(input) -> {
-      let input = string.trim(input)
-      let history = case input {
-        "" -> state.history
-        _ -> list.append(state.history, [input])
+    Ok(line) -> {
+      let combined = case current_buffer {
+        "" -> line
+        _ -> current_buffer <> "\n" <> line
       }
-      case command.handle(input, state.bindings, state.history) {
-        command.Handled ->
-          shell_loop(ShellState(
-            state.prompt_count + 1,
-            state.bindings,
-            history:,
-          ))
 
-        command.Exit -> {
-          io.println("Goodbye.")
-          Nil
-        }
+      case buffer.is_complete(combined) {
+        True -> combined
 
-        command.NotCommand -> {
-          let result = evaluator.evaluate(input, state.bindings)
-
-          io.print(result.output)
-
-          let bindings = case result.new_binding {
-            option.Some(binding) -> list.append(state.bindings, [binding])
-
-            option.None -> state.bindings
-          }
-
-          shell_loop(ShellState(state.prompt_count + 1, bindings, history:))
-        }
+        False -> read_command(prompt, combined)
       }
     }
-    // TODO: Handle error by looping with last good state
-    Error(_) -> Nil
+
+    Error(_) -> ""
+  }
+}
+
+fn shell_loop(state: ShellState) -> Nil {
+  let prompt = "gsh(" <> int.to_string(state.prompt_count) <> ")> "
+  let input =
+    read_command(prompt, "")
+    |> string.trim()
+
+  let history = case input {
+    "" -> state.history
+    _ -> list.append(state.history, [input])
+  }
+
+  case command.handle(input, state.bindings, state.history) {
+    command.Handled ->
+      shell_loop(ShellState(state.prompt_count + 1, state.bindings, history:))
+
+    command.Exit -> {
+      io.println("Goodbye.")
+      Nil
+    }
+
+    command.NotCommand -> {
+      let result = evaluator.evaluate(input, state.bindings)
+
+      io.print(result.output)
+
+      let bindings = case result.new_binding {
+        option.Some(binding) -> list.append(state.bindings, [binding])
+
+        option.None -> state.bindings
+      }
+
+      shell_loop(ShellState(state.prompt_count + 1, bindings, history:))
+    }
   }
 }
