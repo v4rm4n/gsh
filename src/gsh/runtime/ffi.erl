@@ -2,7 +2,8 @@
 
 -export([
     system_version/0,
-    app_version/1
+    app_version/1,
+    get_char/0
 ]).
 
 %% GSH runtime bridge:
@@ -21,3 +22,6 @@ app_version(AppAtom) ->
         undefined ->
             <<"0.0.0">>
     end.
+
+get_char() ->
+    io:get_chars("", 1).

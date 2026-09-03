@@ -6,13 +6,11 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option
-import gleam/string
 import gsh/command/router as command
 import gsh/evaluator/binding
 import gsh/evaluator/evaluator
-import gsh/input/buffer
+import gsh/input/editor
 import gsh/runtime/runtime.{app_version, system_version}
-import in
 
 // GSH keeps shell information immutable and passes the updated
 // state into the next REPL iteration
@@ -41,35 +39,10 @@ fn banner() -> Nil {
   io.println("")
 }
 
-fn read_command(prompt: String, current_buffer: String) -> String {
-  case current_buffer {
-    "" -> io.print(prompt)
-    _ -> io.print("...> ")
-  }
-
-  case in.read_line() {
-    Ok(line) -> {
-      let combined = case current_buffer {
-        "" -> line
-        _ -> current_buffer <> "\n" <> line
-      }
-
-      case buffer.is_complete(combined) {
-        True -> combined
-
-        False -> read_command(prompt, combined)
-      }
-    }
-
-    Error(_) -> ""
-  }
-}
-
 fn shell_loop(state: ShellState) -> Nil {
   let prompt = "gsh(" <> int.to_string(state.prompt_count) <> ")> "
-  let input =
-    read_command(prompt, "")
-    |> string.trim()
+
+  let input = editor.read_command(prompt, state.history)
 
   let history = case input {
     "" -> state.history

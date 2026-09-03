@@ -47,7 +47,7 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
 
     Error(#(_status, output)) ->
       Evaluation(
-        output: formatter.format_output(output),
+        output: formatter.format_error(output),
         success: False,
         error_kind: classify_error(output),
         new_binding: None,

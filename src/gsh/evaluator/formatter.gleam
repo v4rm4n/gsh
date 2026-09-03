@@ -13,6 +13,12 @@ pub fn format_output(output: String) -> String {
   <> "\n"
 }
 
+pub fn format_error(output: String) -> String {
+  output
+  |> string.trim()
+  <> "\n"
+}
+
 fn filter_warning_lines(
   lines: List(String),
   skipping: Bool,
