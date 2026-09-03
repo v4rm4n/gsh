@@ -1,9 +1,9 @@
 // src/gsh/command/help.gleam
 
-import gleam/io
+import gsh/input/terminal
 
 pub fn show() -> Nil {
-  io.println(
+  terminal.println(
     "
 GSH commands:
 

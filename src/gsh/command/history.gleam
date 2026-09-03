@@ -1,24 +1,24 @@
 // src/gsh/command/help.gleam
 
 import gleam/int
-import gleam/io
 import gleam/list
+import gsh/input/terminal
 
 pub fn show(history: List(String)) -> Nil {
-  io.println("")
-  io.println("Command history:")
+  terminal.println("")
+  terminal.println("Command history:")
 
   case history {
-    [] -> io.println("  (empty)")
+    [] -> terminal.println("  (empty)")
 
     _ ->
       list.each(
         list.index_map(history, fn(command, index) {
           int.to_string(index + 1) <> "  " <> command
         }),
-        io.println,
+        terminal.println,
       )
   }
 
-  io.println("")
+  terminal.println("")
 }

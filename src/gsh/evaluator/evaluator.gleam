@@ -126,7 +126,7 @@ fn make_expression_source(
   source.header(True)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
-  <> "  io.println(string.inspect(\n"
+  <> "  terminal.println(string.inspect(\n"
   <> "    "
   <> expression
   <> "\n"
@@ -154,7 +154,7 @@ fn make_normal_binding_source(
       <> "  "
       <> binding.source
       <> "\n"
-      <> "  io.println(string.inspect("
+      <> "  terminal.println(string.inspect("
       <> name
       <> "))\n"
       <> "}\n"
@@ -170,7 +170,7 @@ fn make_assert_source(binding: Binding, bindings: List(Binding)) -> String {
   <> "  "
   <> binding.source
   <> "\n"
-  <> "  io.println(\"ok\")\n"
+  <> "  terminal.println(\"ok\")\n"
   <> "}\n"
 }
 
@@ -184,13 +184,12 @@ fn make_complex_binding_source(
   source.header(True)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
-  <> "  let gsh_value = "
-  <> binding.value
+  <> "  "
+  <> binding.source
   <> "\n"
-  <> "  let "
-  <> binding.pattern
-  <> " = gsh_value\n"
-  <> "  io.println(string.inspect(gsh_value))\n"
+  <> "  terminal.println(string.inspect("
+  <> binding.value
+  <> "))\n"
   <> "}\n"
 }
 

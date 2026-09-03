@@ -11,6 +11,7 @@ import gsh/evaluator/binding
 import gsh/evaluator/evaluator
 import gsh/input/buffer
 import gsh/input/editor
+import gsh/input/terminal
 import gsh/runtime/runtime.{app_version, system_version}
 
 // GSH keeps shell information immutable and passes the updated
@@ -24,6 +25,7 @@ type ShellState {
 }
 
 pub fn main() -> Nil {
+  let _ = runtime.enable_raw_mode()
   // Print the banner.
   banner()
   // Start the REPL.
@@ -32,12 +34,12 @@ pub fn main() -> Nil {
 
 fn banner() -> Nil {
   // Use FFI calls for the banner
-  io.println(system_version())
+  terminal.println(system_version())
   format.printf(
     "Interactive Gleam (GSH ~s) - press Ctrl+C to exit (type h() ENTER for help)",
     app_version(atom.create("gsh")),
   )
-  io.println("")
+  terminal.println("")
 }
 
 fn shell_loop(state: ShellState) -> Nil {
@@ -61,7 +63,8 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       shell_loop(ShellState(state.prompt_count + 1, state.bindings, history))
 
     command.Exit -> {
-      io.println("Goodbye.")
+      let _ = runtime.disable_raw_mode()
+      terminal.println("Goodbye.")
       Nil
     }
 
@@ -98,7 +101,7 @@ fn read_lines(
 
   io.print(current_prompt)
 
-  let line = editor.read_line(history)
+  let line = editor.read_line(current_prompt, history)
 
   let combined = case current {
     "" -> line
