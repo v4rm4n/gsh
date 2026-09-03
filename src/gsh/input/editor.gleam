@@ -5,7 +5,9 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import gsh/input/display
-import gsh/input/key.{ArrowDown, ArrowUp, Backspace, Character, Enter}
+import gsh/input/key.{
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character, Enter,
+}
 import gsh/input/reader
 import gsh/input/terminal
 
@@ -53,45 +55,73 @@ fn loop(prompt: String, editor: Editor) -> String {
       loop(prompt, updated)
     }
 
+    ArrowLeft -> {
+      let new_cursor = int.max(0, editor.cursor - 1)
+      let updated = Editor(..editor, cursor: new_cursor)
+
+      display.render(prompt, updated.buffer)
+      sync_cursor(updated)
+
+      loop(prompt, updated)
+    }
+
+    ArrowRight -> {
+      let max_cursor = string.length(editor.buffer)
+      let new_cursor = int.min(max_cursor, editor.cursor + 1)
+      let updated = Editor(..editor, cursor: new_cursor)
+
+      display.render(prompt, updated.buffer)
+      sync_cursor(updated)
+
+      loop(prompt, updated)
+    }
+
     Character(value) -> {
+      // Inject the new character at the current cursor position
+      let left = string.slice(editor.buffer, 0, editor.cursor)
+      let right =
+        string.slice(
+          editor.buffer,
+          editor.cursor,
+          string.length(editor.buffer) - editor.cursor,
+        )
+
+      let new_buffer = left <> value <> right
+
       let updated =
         Editor(
-          buffer: editor.buffer <> value,
-          cursor: editor.cursor + 1,
-          history: editor.history,
-          history_index: editor.history_index,
-          saved_buffer: editor.saved_buffer,
+          ..editor,
+          buffer: new_buffer,
+          cursor: editor.cursor + string.length(value),
         )
 
       display.render(prompt, updated.buffer)
+      sync_cursor(updated)
+
       loop(prompt, updated)
     }
 
     Backspace -> {
-      let updated = case editor.buffer {
-        "" -> editor
+      case editor.cursor > 0 {
+        False -> loop(prompt, editor)
+        // At the start, do nothing
+        True -> {
+          let left = string.slice(editor.buffer, 0, editor.cursor - 1)
+          let right =
+            string.slice(
+              editor.buffer,
+              editor.cursor,
+              string.length(editor.buffer) - editor.cursor,
+            )
 
-        _ -> {
-          let new_buffer =
-            editor.buffer
-            |> string.to_graphemes()
-            |> list.reverse()
-            |> list.drop(1)
-            |> list.reverse()
-            |> string.join("")
+          let updated =
+            Editor(..editor, buffer: left <> right, cursor: editor.cursor - 1)
 
-          Editor(
-            buffer: new_buffer,
-            cursor: string.length(new_buffer),
-            history: editor.history,
-            history_index: editor.history_index,
-            saved_buffer: editor.saved_buffer,
-          )
+          display.render(prompt, updated.buffer)
+          sync_cursor(updated)
+          loop(prompt, updated)
         }
       }
-
-      display.render(prompt, updated.buffer)
-      loop(prompt, updated)
     }
 
     _ -> loop(prompt, editor)
@@ -173,5 +203,14 @@ fn history_down(editor: Editor) -> Editor {
         }
       }
     }
+  }
+}
+
+fn sync_cursor(editor: Editor) -> Nil {
+  let distance_from_end = string.length(editor.buffer) - editor.cursor
+
+  case distance_from_end > 0 {
+    True -> terminal.cursor_left(distance_from_end)
+    False -> Nil
   }
 }

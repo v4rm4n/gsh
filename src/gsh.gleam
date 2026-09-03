@@ -1,5 +1,6 @@
 // src/gsh.gleam
 
+import etch/erlang/tty
 import gleam/erlang/atom
 import gleam/format
 import gleam/int
@@ -25,11 +26,19 @@ type ShellState {
 }
 
 pub fn main() -> Nil {
-  let _ = runtime.enable_raw_mode()
+  // 1. Let etch handle the raw mode TTY transition safely
+  let assert Ok(_) = tty.enter_raw()
+
   // Print the banner.
   banner()
   // Start the REPL.
   shell_loop(ShellState(1, [], []))
+
+  // Clean up when exiting
+  let assert Ok(_) = tty.exit_raw()
+
+  // 2. Explicitly return Nil so the types match!
+  Nil
 }
 
 fn banner() -> Nil {
@@ -63,7 +72,8 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       shell_loop(ShellState(state.prompt_count + 1, state.bindings, history))
 
     command.Exit -> {
-      let _ = runtime.disable_raw_mode()
+      let _ = tty.exit_raw()
+      // <-- 2. FIXED THIS CALL
       terminal.println("Goodbye.")
       Nil
     }
