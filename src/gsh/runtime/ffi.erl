@@ -3,7 +3,8 @@
 -export([
     system_version/0,
     app_version/1,
-    get_char/0
+    get_char/0,
+    pushback/1
 ]).
 
 %% GSH runtime bridge:
@@ -24,4 +25,14 @@ app_version(AppAtom) ->
     end.
 
 get_char() ->
-    io:get_chars("", 1).
+    case get(gsh_pushback) of
+        undefined ->
+            io:get_chars("", 1);
+        Ch ->
+            put(gsh_pushback, undefined),
+            Ch
+    end.
+
+pushback(Ch) ->
+    put(gsh_pushback, Ch),
+    nil.

@@ -1,47 +1,83 @@
 // src/input/editor.gleam
-import gleam/io
-import gsh/input/buffer
+import gleam/int
+import gleam/list
+import gleam/result
+import gleam/string
+import gsh/input/key.{ArrowDown, ArrowUp, Character, Enter}
 import gsh/input/reader
 
 pub type Editor {
   Editor(buffer: String, cursor: Int, history: List(String), history_index: Int)
 }
 
-pub fn read_command(prompt: String, history: List(String)) -> String {
-  io.print(prompt)
-
+pub fn read_line(history: List(String)) -> String {
   loop(Editor(buffer: "", cursor: 0, history: history, history_index: -1))
 }
 
 fn loop(editor: Editor) -> String {
-  let key = reader.read_char()
+  let key = reader.read_key()
 
   case key {
-    "\r" -> {
-      case buffer.is_complete(editor.buffer) {
-        True -> editor.buffer
+    Enter -> editor.buffer
 
-        False -> {
-          io.print("...> ")
+    ArrowUp -> loop(history_up(editor))
 
-          loop(Editor(
-            buffer: editor.buffer <> "\n",
-            cursor: editor.cursor,
-            history: editor.history,
-            history_index: editor.history_index,
-          ))
-        }
-      }
-    }
+    ArrowDown -> loop(history_down(editor))
 
-    "\n" -> loop(editor)
-
-    _ ->
+    Character(value) ->
       loop(Editor(
-        buffer: editor.buffer <> key,
+        buffer: editor.buffer <> value,
         cursor: editor.cursor + 1,
         history: editor.history,
         history_index: editor.history_index,
       ))
+
+    _ -> loop(editor)
   }
+}
+
+fn history_up(editor: Editor) -> Editor {
+  case editor.history {
+    [] -> editor
+
+    _ -> {
+      let new_index = case editor.history_index {
+        -1 -> list.length(editor.history) - 1
+
+        index -> int.max(index - 1, 0)
+      }
+
+      let command =
+        editor.history
+        |> list.drop(new_index)
+        |> list.first()
+        |> result.unwrap("")
+
+      Editor(
+        buffer: command,
+        cursor: string.length(command),
+        history: editor.history,
+        history_index: new_index,
+      )
+    }
+  }
+}
+
+fn history_down(editor: Editor) -> Editor {
+  let max = list.length(editor.history) - 1
+
+  let new_index = int.min(editor.history_index + 1, max)
+
+  let command =
+    editor.history
+    |> list.drop(new_index)
+    |> list.first()
+    |> result.unwrap("")
+
+  Editor(
+    buffer: command,
+    cursor: string.length(command),
+    history: editor.history,
+    history_index: new_index,
+  )
 }
