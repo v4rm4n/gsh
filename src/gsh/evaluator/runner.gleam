@@ -39,7 +39,7 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
   {
     Ok(output) ->
       Evaluation(
-        output: output,
+        output: formatter.format_output(output),
         success: True,
         error_kind: NoError,
         new_binding: persist_binding(binding),
@@ -47,7 +47,7 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
 
     Error(#(_status, output)) ->
       Evaluation(
-        output: formatter.format_error(output),
+        output: formatter.format_output(output),
         success: False,
         error_kind: classify_error(output),
         new_binding: None,
