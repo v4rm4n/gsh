@@ -43,6 +43,8 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
         success: True,
         error_kind: NoError,
         new_binding: persist_binding(binding),
+        new_import: None,
+        // <-- ADDED
       )
 
     Error(#(_status, output)) ->
@@ -51,6 +53,8 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
         success: False,
         error_kind: classify_error(output),
         new_binding: None,
+        new_import: None,
+        // <-- ADDED
       )
   }
 }

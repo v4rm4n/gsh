@@ -21,28 +21,25 @@ type ShellState {
   ShellState(
     prompt_count: Int,
     bindings: List(binding.Binding),
+    imports: List(String),
     history: List(String),
   )
 }
 
 pub fn main() -> Nil {
-  // 1. Let etch handle the raw mode TTY transition safely
   let assert Ok(_) = tty.enter_raw()
 
-  // Print the banner.
   banner()
-  // Start the REPL.
-  shell_loop(ShellState(1, [], []))
 
-  // Clean up when exiting
+  // 2. INITIALIZE with empty imports
+  shell_loop(ShellState(1, [], [], []))
+
   let assert Ok(_) = tty.exit_raw()
 
-  // 2. Explicitly return Nil so the types match!
   Nil
 }
 
 fn banner() -> Nil {
-  // Use FFI calls for the banner
   terminal.println(system_version())
   format.printf(
     "Interactive Gleam (GSH ~s) - press Ctrl+C to exit (type h() ENTER for help)",
@@ -58,7 +55,12 @@ fn shell_loop(state: ShellState) -> Nil {
 
   case input {
     "" ->
-      shell_loop(ShellState(state.prompt_count, state.bindings, state.history))
+      shell_loop(ShellState(
+        state.prompt_count,
+        state.bindings,
+        state.imports,
+        state.history,
+      ))
 
     _ -> handle_input(input, state)
   }
@@ -69,27 +71,38 @@ fn handle_input(input: String, state: ShellState) -> Nil {
 
   case command.handle(input, state.bindings, state.history) {
     command.Handled ->
-      shell_loop(ShellState(state.prompt_count + 1, state.bindings, history))
+      shell_loop(ShellState(
+        state.prompt_count + 1,
+        state.bindings,
+        state.imports,
+        // <-- Pass imports
+        history,
+      ))
 
     command.Exit -> {
       let _ = tty.exit_raw()
-      // <-- 2. FIXED THIS CALL
       terminal.println("Goodbye.")
       Nil
     }
 
     command.NotCommand -> {
-      let result = evaluator.evaluate(input, state.bindings)
+      // 3. PASS IMPORTS to the evaluator
+      let result = evaluator.evaluate(input, state.bindings, state.imports)
 
       terminal.print(result.output)
 
       let bindings = case result.new_binding {
         option.Some(binding) -> list.append(state.bindings, [binding])
-
         option.None -> state.bindings
       }
 
-      shell_loop(ShellState(state.prompt_count + 1, bindings, history))
+      // 4. SAVE NEW IMPORTS returned by the evaluator
+      let imports = case result.new_import {
+        option.Some(imp) -> list.append(state.imports, [imp])
+        option.None -> state.imports
+      }
+
+      shell_loop(ShellState(state.prompt_count + 1, bindings, imports, history))
     }
   }
 }

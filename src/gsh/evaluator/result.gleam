@@ -9,6 +9,7 @@ pub type Evaluation {
     success: Bool,
     error_kind: ErrorKind,
     new_binding: Option(Binding),
+    new_import: Option(String),
   )
 }
 

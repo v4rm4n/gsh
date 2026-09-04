@@ -11,18 +11,32 @@ import simplifile
 
 const evaluator_path = "test/gsh_eval.gleam"
 
-pub fn evaluate(input: String, bindings: List(Binding)) -> Evaluation {
+pub fn evaluate(
+  input: String,
+  bindings: List(Binding),
+  imports: List(String),
+) -> Evaluation {
   let input = string.trim(input)
 
-  let parsed_binding = case string.starts_with(input, "let ") {
-    True -> parse_binding(input)
-    False -> None
+  let is_import = string.starts_with(input, "import ")
+
+  // Don't bother checking for `let ` if we already know it's an import
+  let parsed_binding = case is_import {
+    True -> None
+    False ->
+      case string.starts_with(input, "let ") {
+        True -> parse_binding(input)
+        False -> None
+      }
   }
 
-  let source = case parsed_binding {
-    Some(binding) -> make_binding_source(binding, bindings)
-
-    None -> make_expression_source(input, bindings)
+  let source = case is_import {
+    True -> make_import_source(input, bindings, imports)
+    False ->
+      case parsed_binding {
+        Some(binding) -> make_binding_source(binding, bindings, imports)
+        None -> make_expression_source(input, bindings, imports)
+      }
   }
 
   case simplifile.write(to: evaluator_path, contents: source) {
@@ -31,7 +45,12 @@ pub fn evaluate(input: String, bindings: List(Binding)) -> Evaluation {
 
       let _ = simplifile.delete_all(paths: [evaluator_path])
 
-      result
+      // Intercept the result! If it was an import and it compiled successfully,
+      // save the import string and clear the dummy output.
+      case is_import, result.success {
+        True, True -> Evaluation(..result, new_import: Some(input), output: "")
+        _, _ -> result
+      }
     }
 
     Error(_) ->
@@ -40,6 +59,7 @@ pub fn evaluate(input: String, bindings: List(Binding)) -> Evaluation {
         success: False,
         error_kind: CompileError,
         new_binding: None,
+        new_import: None,
       )
   }
 }
@@ -117,13 +137,37 @@ fn is_identifier_continue(value: String) -> Bool {
   string.contains(does: "abcdefghijklmnopqrstuvwxyz_0123456789", contain: value)
 }
 
+fn imports_source(imports: List(String)) -> String {
+  case imports {
+    [] -> ""
+    _ -> string.join(imports, "\n") <> "\n"
+  }
+}
+
+fn make_import_source(
+  new_import: String,
+  bindings: List(Binding),
+  imports: List(String),
+) -> String {
+  source.header(False)
+  <> imports_source(imports)
+  <> new_import
+  <> "\n"
+  <> "pub fn main() {\n"
+  <> bindings_source(bindings)
+  <> "  terminal.println(\"ok\")\n"
+  <> "}\n"
+}
+
 // Generate a temporary module for evaluating a normal expression
 // while replaying successful bindings from the current session.
 fn make_expression_source(
   expression: String,
   bindings: List(Binding),
+  imports: List(String),
 ) -> String {
   source.header(True)
+  <> imports_source(imports)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  terminal.println(string.inspect(\n"
@@ -134,21 +178,27 @@ fn make_expression_source(
   <> "}\n"
 }
 
-fn make_binding_source(binding: Binding, bindings: List(Binding)) -> String {
+fn make_binding_source(
+  binding: Binding,
+  bindings: List(Binding),
+  imports: List(String),
+) -> String {
   case binding.kind {
-    Let -> make_normal_binding_source(binding, bindings)
+    Let -> make_normal_binding_source(binding, bindings, imports)
 
-    LetAssert -> make_assert_source(binding, bindings)
+    LetAssert -> make_assert_source(binding, bindings, imports)
   }
 }
 
 fn make_normal_binding_source(
   binding: Binding,
   bindings: List(Binding),
+  imports: List(String),
 ) -> String {
   case binding.name {
     Some(name) ->
       source.header(True)
+      <> imports_source(imports)
       <> "pub fn main() {\n"
       <> bindings_source(bindings)
       <> "  "
@@ -159,12 +209,17 @@ fn make_normal_binding_source(
       <> "))\n"
       <> "}\n"
 
-    None -> make_complex_binding_source(binding, bindings)
+    None -> make_complex_binding_source(binding, bindings, imports)
   }
 }
 
-fn make_assert_source(binding: Binding, bindings: List(Binding)) -> String {
+fn make_assert_source(
+  binding: Binding,
+  bindings: List(Binding),
+  imports: List(String),
+) -> String {
   source.header(False)
+  <> imports_source(imports)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  "
@@ -180,8 +235,10 @@ fn make_assert_source(binding: Binding, bindings: List(Binding)) -> String {
 fn make_complex_binding_source(
   binding: Binding,
   bindings: List(Binding),
+  imports: List(String),
 ) -> String {
   source.header(True)
+  <> imports_source(imports)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  "
