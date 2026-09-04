@@ -2,6 +2,7 @@
 
 import etch/erlang/tty
 import gleam/erlang/atom
+import gleam/erlang/process
 import gleam/format
 import gleam/int
 import gleam/io
@@ -29,11 +30,40 @@ type ShellState {
 }
 
 pub fn main() -> Nil {
+  // 1. Intercept ALL CLI arguments and boot them
+  let args = runtime.get_args()
+
+  case list.is_empty(args) {
+    True -> Nil
+    False -> {
+      terminal.println("Booting background applications...")
+
+      list.each(args, fn(app_module) {
+        case runtime.boot_app(app_module) {
+          Ok(pid) -> {
+            // pid is returned as Dynamic, so we inspect it to get <0.X.0>
+            let pid_str = string.inspect(pid)
+            terminal.println(app_module <> " -> " <> pid_str)
+          }
+          Error(err) -> {
+            terminal.println(app_module <> " -> Failed: " <> err)
+          }
+        }
+      })
+
+      terminal.println("")
+      // Empty line for spacing
+      process.sleep(50)
+      // Give them time to print startup logs before raw mode
+    }
+  }
+
+  // 2. Start the shell as usual
   let assert Ok(_) = tty.enter_raw()
 
   banner()
 
-  // Initialized with empty types list
+  // Initialized with empty lists
   shell_loop(ShellState(1, [], [], [], [], []))
 
   let assert Ok(_) = tty.exit_raw()
@@ -147,6 +177,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         }
 
         False -> {
+          // Exit raw mode so side effects print normally!
+          let assert Ok(_) = tty.exit_raw()
+
           // Pass state.types into the evaluator
           let result =
             evaluator.evaluate(
@@ -157,7 +190,11 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               state.functions,
             )
 
-          terminal.print(result.output)
+          // Print evaluator output while still in normal mode
+          io.print(result.output)
+
+          // Re-enter raw mode for the next REPL prompt
+          let assert Ok(_) = tty.enter_raw()
 
           let bindings = case result.new_binding {
             option.Some(binding) -> list.append(state.bindings, [binding])

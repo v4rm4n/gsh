@@ -7,7 +7,10 @@
     load_and_run/2,
     store_put/2,
     store_get/1,
-    store_has/1
+    store_has/1,
+    get_args/0,
+    boot_app/1,
+    pid_from_string/1
 ]).
 
 system_version() ->
@@ -78,3 +81,27 @@ store_get(KeyBin) ->
 
 store_has(KeyBin) ->
     get(KeyBin) =/= undefined.
+
+%% Reads arguments passed after `--` in the CLI
+get_args() ->
+    [unicode:characters_to_binary(A) || A <- init:get_plain_arguments()].
+
+%% Dynamically loads a Gleam module and runs its main() in a background process
+boot_app(ModuleNameBin) ->
+    %% Convert Gleam path syntax (my_app/server) to Erlang module syntax (my_app@server)
+    NormalizedBin = binary:replace(ModuleNameBin, <<"/">>, <<"@">>, [global]),
+    Module = binary_to_atom(NormalizedBin, utf8),
+    
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            Pid = spawn(fun() -> apply(Module, main, []) end),
+            {ok, Pid};
+        {error, Reason} -> 
+            %% Capture the exact Erlang error (e.g. 'nofile')
+            ReasonStr = list_to_binary(io_lib:format("~p", [Reason])),
+            {error, <<"Could not load '", NormalizedBin/binary, "': ", ReasonStr/binary>>}
+    end.
+
+%% Converts a string like "<0.83.0>" into an actual Erlang PID
+pid_from_string(Bin) ->
+    list_to_pid(binary_to_list(Bin)).

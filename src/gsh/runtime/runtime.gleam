@@ -2,6 +2,7 @@
 import etch/erlang/tty
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/atom
+import gleam/erlang/process
 
 @external(erlang, "ffi", "system_version")
 pub fn system_version() -> String
@@ -25,3 +26,12 @@ pub fn load_and_run(
   module: String,
   function: String,
 ) -> Result(Dynamic, Dynamic)
+
+@external(erlang, "ffi", "get_args")
+pub fn get_args() -> List(String)
+
+@external(erlang, "ffi", "boot_app")
+pub fn boot_app(module: String) -> Result(Dynamic, String)
+
+@external(erlang, "ffi", "pid_from_string")
+pub fn pid_from_string(pid: String) -> process.Pid

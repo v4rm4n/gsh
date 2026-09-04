@@ -187,7 +187,10 @@ fn is_identifier_continue(value: String) -> Bool {
 
 // INJECT THE STORE IMPORT SO CACHING ALWAYS WORKS
 fn imports_source(imports: List(String)) -> String {
-  let base = "import gsh/runtime/store as gsh_store\n"
+  let base =
+    "import gsh/runtime/store as gsh_store\n"
+    <> "import gsh/runtime/runtime as gsh_internal_runtime\n"
+
   case imports {
     [] -> base
     _ -> base <> string.join(imports, "\n") <> "\n"
@@ -211,9 +214,13 @@ fn types_source(types: List(String)) -> String {
 }
 
 fn functions_source(functions: List(String)) -> String {
+  // INJECT THE `pid()` HELPER INTO EVERY EVALUATION
+  let builtins =
+    "pub fn pid(id: String) { gsh_internal_runtime.pid_from_string(id) }"
+
   case functions {
-    [] -> ""
-    _ -> string.join(functions, "\n\n") <> "\n\n"
+    [] -> builtins <> "\n\n"
+    _ -> builtins <> "\n\n" <> string.join(functions, "\n\n") <> "\n\n"
   }
 }
 
