@@ -24,6 +24,7 @@ type ShellState {
     imports: List(String),
     types: List(String),
     history: List(String),
+    functions: List(String),
   )
 }
 
@@ -33,7 +34,7 @@ pub fn main() -> Nil {
   banner()
 
   // Initialized with empty types list
-  shell_loop(ShellState(1, [], [], [], []))
+  shell_loop(ShellState(1, [], [], [], [], []))
 
   let assert Ok(_) = tty.exit_raw()
 
@@ -62,6 +63,7 @@ fn shell_loop(state: ShellState) -> Nil {
         state.imports,
         state.types,
         state.history,
+        state.functions,
       ))
 
     _ -> handle_input(input, state)
@@ -79,6 +81,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.imports,
         state.types,
         history,
+        state.functions,
       ))
 
     command.Exit -> {
@@ -95,6 +98,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.imports,
         state.types,
         history,
+        state.functions,
       ))
     }
 
@@ -119,6 +123,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.imports,
         state.types,
         history,
+        state.functions,
       ))
     }
 
@@ -137,6 +142,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             state.imports,
             state.types,
             history,
+            state.functions,
           ))
         }
 
@@ -148,6 +154,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               state.bindings,
               state.imports,
               state.types,
+              state.functions,
             )
 
           terminal.print(result.output)
@@ -168,12 +175,19 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             option.None -> state.types
           }
 
+          // Persist newly evaluated custom functions
+          let functions = case result.new_function {
+            option.Some(f) -> list.append(state.functions, [f])
+            option.None -> state.functions
+          }
+
           shell_loop(ShellState(
             state.prompt_count + 1,
             bindings,
             imports,
             types,
             history,
+            functions,
           ))
         }
       }

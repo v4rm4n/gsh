@@ -1,5 +1,6 @@
 // src/gsh/runtime/runtime.gleam
 import etch/erlang/tty
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/atom
 
 @external(erlang, "ffi", "system_version")
@@ -18,3 +19,9 @@ pub fn disable_raw_mode() -> Result(Nil, tty.TerminalError) {
 
 @external(erlang, "ffi", "get_exports")
 pub fn get_exports(module: String) -> List(String)
+
+@external(erlang, "ffi", "load_and_run")
+pub fn load_and_run(
+  module: String,
+  function: String,
+) -> Result(Dynamic, Dynamic)

@@ -15,15 +15,18 @@ pub fn evaluate(
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> Evaluation {
   let input = string.trim(input)
 
   let is_import = string.starts_with(input, "import ")
   let is_type =
     string.starts_with(input, "type ") || string.starts_with(input, "pub type ")
+  let is_function =
+    string.starts_with(input, "fn ") || string.starts_with(input, "pub fn ")
 
-  // Don't check for `let ` if it's an import or a type definition
-  let parsed_binding = case is_import || is_type {
+  // Don't check for `let ` if it's an import, type, or top-level function
+  let parsed_binding = case is_import || is_type || is_function {
     True -> None
     False ->
       case string.starts_with(input, "let ") {
@@ -33,15 +36,33 @@ pub fn evaluate(
   }
 
   let source = case is_import {
-    True -> make_import_source(input, bindings, imports, types)
+    True -> make_import_source(input, bindings, imports, types, functions)
     False ->
       case is_type {
-        True -> make_type_source(input, bindings, imports, types)
+        True -> make_type_source(input, bindings, imports, types, functions)
         False ->
-          case parsed_binding {
-            Some(binding) ->
-              make_binding_source(binding, bindings, imports, types)
-            None -> make_expression_source(input, bindings, imports, types)
+          case is_function {
+            True ->
+              make_function_source(input, bindings, imports, types, functions)
+            False ->
+              case parsed_binding {
+                Some(binding) ->
+                  make_binding_source(
+                    binding,
+                    bindings,
+                    imports,
+                    types,
+                    functions,
+                  )
+                None ->
+                  make_expression_source(
+                    input,
+                    bindings,
+                    imports,
+                    types,
+                    functions,
+                  )
+              }
           }
       }
   }
@@ -55,16 +76,14 @@ pub fn evaluate(
       let _ = simplifile.delete_all(paths: [evaluator_path])
 
       // Intercept results for top-level definitions
-      case is_import, is_type, result.success {
-        True, _, True ->
+      case is_import, is_type, is_function, result.success {
+        True, _, _, True ->
           Evaluation(..result, new_import: Some(input), output: "")
-        _, True, True ->
-          Evaluation(
-            ..result,
-            new_type: Some(input),
-            output: "// Type defined\n",
-          )
-        _, _, _ -> result
+        _, True, _, True ->
+          Evaluation(..result, new_type: Some(input), output: "")
+        _, _, True, True ->
+          Evaluation(..result, new_function: Some(input), output: "")
+        _, _, _, _ -> result
       }
     }
 
@@ -76,8 +95,33 @@ pub fn evaluate(
         new_binding: None,
         new_import: None,
         new_type: None,
+        new_function: None,
       )
   }
+}
+
+fn make_function_source(
+  new_fn: String,
+  bindings: List(Binding),
+  imports: List(String),
+  types: List(String),
+  functions: List(String),
+) -> String {
+  let pub_fn = case string.starts_with(new_fn, "pub ") {
+    True -> new_fn
+    False -> "pub " <> new_fn
+  }
+
+  source.header(False)
+  <> imports_source(imports)
+  <> types_source(types)
+  <> functions_source(functions)
+  <> pub_fn
+  <> "\n\n"
+  <> "pub fn gsh_entry() {\n"
+  <> bindings_source(bindings)
+  <> "  terminal.println(\"// Function defined\")\n"
+  <> "}\n"
 }
 
 fn parse_binding(source: String) -> Option(Binding) {
@@ -174,11 +218,19 @@ fn types_source(types: List(String)) -> String {
   }
 }
 
+fn functions_source(functions: List(String)) -> String {
+  case functions {
+    [] -> ""
+    _ -> string.join(functions, "\n\n") <> "\n\n"
+  }
+}
+
 fn make_type_source(
   new_type: String,
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> String {
   let pub_type = case string.starts_with(new_type, "pub ") {
     True -> new_type
@@ -188,9 +240,10 @@ fn make_type_source(
   source.header(False)
   <> imports_source(imports)
   <> types_source(types)
+  <> functions_source(functions)
   <> pub_type
   <> "\n\n"
-  <> "pub fn main() {\n"
+  <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> "  terminal.println(\"// Type defined\")\n"
   <> "}\n"
@@ -201,13 +254,15 @@ fn make_import_source(
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> String {
   source.header(False)
   <> imports_source(imports)
   <> types_source(types)
+  <> functions_source(functions)
   <> new_import
   <> "\n"
-  <> "pub fn main() {\n"
+  <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> "  terminal.println(\"ok\")\n"
   <> "}\n"
@@ -218,11 +273,13 @@ fn make_expression_source(
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> String {
   source.header(True)
   <> imports_source(imports)
   <> types_source(types)
-  <> "pub fn main() {\n"
+  <> functions_source(functions)
+  <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> "  terminal.println(gsh_internal_string.inspect("
   <> expression
@@ -235,10 +292,13 @@ fn make_binding_source(
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> String {
   case binding.kind {
-    Let -> make_normal_binding_source(binding, bindings, imports, types)
-    LetAssert -> make_assert_source(binding, bindings, imports, types)
+    Let ->
+      make_normal_binding_source(binding, bindings, imports, types, functions)
+    LetAssert ->
+      make_assert_source(binding, bindings, imports, types, functions)
   }
 }
 
@@ -247,13 +307,15 @@ fn make_normal_binding_source(
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> String {
   case binding.name {
     Some(name) ->
       source.header(True)
       <> imports_source(imports)
       <> types_source(types)
-      <> "pub fn main() {\n"
+      <> functions_source(functions)
+      <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
       <> "  "
       <> binding.source
@@ -263,7 +325,8 @@ fn make_normal_binding_source(
       <> "))\n"
       <> "}\n"
 
-    None -> make_complex_binding_source(binding, bindings, imports, types)
+    None ->
+      make_complex_binding_source(binding, bindings, imports, types, functions)
   }
 }
 
@@ -272,11 +335,13 @@ fn make_assert_source(
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> String {
   source.header(False)
   <> imports_source(imports)
   <> types_source(types)
-  <> "pub fn main() {\n"
+  <> functions_source(functions)
+  <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> "  "
   <> binding.source
@@ -290,11 +355,13 @@ fn make_complex_binding_source(
   bindings: List(Binding),
   imports: List(String),
   types: List(String),
+  functions: List(String),
 ) -> String {
   source.header(True)
   <> imports_source(imports)
   <> types_source(types)
-  <> "pub fn main() {\n"
+  <> functions_source(functions)
+  <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> "  "
   <> binding.source

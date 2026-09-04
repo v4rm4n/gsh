@@ -3,7 +3,8 @@
 -export([
     system_version/0,
     app_version/1,
-    get_exports/1
+    get_exports/1,
+    load_and_run/2
 ]).
 
 system_version() ->
@@ -35,4 +36,32 @@ get_exports(ModuleNameBin) ->
         end
     catch
         _:_ -> [] %% Failsafe if anything crashes
+    end.
+
+load_and_run(ModuleNameBin, FunctionNameBin) ->
+    Module = binary_to_atom(ModuleNameBin, utf8),
+    Function = binary_to_atom(FunctionNameBin, utf8),
+
+    %% Purge old version from memory
+    code:purge(Module),
+    code:delete(Module),
+
+    %% Dynamically locate ebin directories under build/
+    case filelib:wildcard("build/dev/erlang/*/ebin") of
+        [] -> ok;
+        Paths -> lists:foreach(fun(P) -> code:add_patha(P) end, Paths)
+    end,
+
+    %% Hot-load the freshly compiled bytecode
+    case code:load_file(Module) of
+        {module, Module} ->
+            try
+                Result = apply(Module, Function, []),
+                {ok, Result}
+            catch
+                Class:Reason:Stack ->
+                    {error, {Class, Reason, Stack}}
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.

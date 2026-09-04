@@ -1,13 +1,12 @@
 // src/gsh/evaluator/runner.gleam
-
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import gsh/evaluator/binding.{type Binding, Let, LetAssert}
 import gsh/evaluator/formatter
 import gsh/evaluator/result.{
-  type ErrorKind, type Evaluation, CompileError, Evaluation, NoError,
-  RuntimeError,
+  type Evaluation, CompileError, Evaluation, NoError, RuntimeError,
 }
+import gsh/runtime/runtime
 import shellout
 
 fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
@@ -27,44 +26,53 @@ pub fn build_project() -> Result(String, #(Int, String)) {
 }
 
 pub fn run(binding: Option(Binding)) -> Evaluation {
+  // 1. Trigger compile-only step (creates/updates .beam files without running a new VM)
   case
     shellout.command(
       run: "gleam",
-      with: [
-        "run",
-        "--module",
-        "gsh_eval",
-        "--no-print-progress",
-      ],
+      with: ["build", "--target", "erlang"],
       in: ".",
       opt: [],
     )
   {
-    Ok(output) ->
-      Evaluation(
-        output: formatter.format_output(output),
-        success: True,
-        error_kind: NoError,
-        new_binding: persist_binding(binding),
-        new_import: None,
-        new_type: None,
-      )
-
     Error(#(_status, output)) ->
       Evaluation(
         output: formatter.format_error(output),
         success: False,
-        error_kind: classify_error(output),
+        error_kind: CompileError,
         new_binding: None,
         new_import: None,
         new_type: None,
+        new_function: None,
       )
-  }
-}
 
-fn classify_error(output: String) -> ErrorKind {
-  case string.contains(output, "stacktrace") {
-    True -> RuntimeError
-    False -> CompileError
+    Ok(_) -> {
+      // 2. Change "main" to "gsh_entry" here!
+      case runtime.load_and_run("gsh_eval", "gsh_entry") {
+        Ok(_) ->
+          Evaluation(
+            output: "",
+            success: True,
+            error_kind: NoError,
+            new_binding: persist_binding(binding),
+            new_import: None,
+            new_type: None,
+            new_function: None,
+          )
+
+        Error(err) ->
+          Evaluation(
+            output: "Runtime Error: "
+              <> formatter.format_error(string.inspect(err))
+              <> "\n",
+            success: False,
+            error_kind: RuntimeError,
+            new_binding: None,
+            new_import: None,
+            new_type: None,
+            new_function: None,
+          )
+      }
+    }
   }
 }

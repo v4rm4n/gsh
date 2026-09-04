@@ -11,6 +11,7 @@ pub type Evaluation {
     new_binding: Option(Binding),
     new_import: Option(String),
     new_type: Option(String),
+    new_function: Option(String),
   )
 }
 
