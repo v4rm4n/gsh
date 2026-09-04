@@ -1,5 +1,6 @@
 // src/gsh/evaluator/formatter.gleam
 
+import contour
 import gleam/int
 import gleam/list
 import gleam/string
@@ -10,11 +11,16 @@ pub fn format_output(output: String) -> String {
   |> filter_warning_lines(False, [])
   |> string.join(with: "\n")
   |> string.trim()
-  <> "\n"
+  |> contour.to_ansi()
+  // <-- Add contour here!
+  |> fn(highlighted) { highlighted <> "\n" }
 }
 
 pub fn format_error(output: String) -> String {
   output
+  |> string.split("\n")
+  |> filter_warning_lines(False, [])
+  |> string.join(with: "\n")
   |> string.trim()
   |> hide_internal_path()
   <> "\n"
@@ -70,7 +76,9 @@ fn filter_warning_lines(
 }
 
 fn is_warning_header(line: String) -> Bool {
-  string.starts_with(line, "warning:")
+  // Gleam compiler warnings typically look like:
+  // "path/to/file.gleam:line:col: Warning: message
+  string.contains(line, "Warning:") || string.starts_with(line, "warning:")
 }
 
 fn is_runtime_output(line: String) -> Bool {
@@ -82,6 +90,8 @@ fn is_runtime_output(line: String) -> Bool {
     Error(_) ->
       line == "True"
       || line == "False"
+      // Whitelist successful asserts
+      || line == "ok"
       || string.starts_with(line, "\"")
       || string.starts_with(line, "#(")
       || string.starts_with(line, "{")
@@ -90,5 +100,9 @@ fn is_runtime_output(line: String) -> Bool {
       || string.starts_with(line, "fn(")
       || string.starts_with(line, "Ok(")
       || string.starts_with(line, "Error(")
+      // Use contains() to bypass ANSI codes
+      || string.starts_with(line, "error:")
+      // Use contains() to bypass ANSI codes
+      || string.starts_with(line, "runtime error:")
   }
 }

@@ -21,6 +21,7 @@ simplifile = ">= 2.7.0 and < 3.0.0"
 shellout = ">= 1.8.0 and < 2.0.0"
 etch_erlang = ">= 1.1.0 and < 2.0.0"
 etch = ">= 1.4.0 and < 2.0.0"
+contour = ">= 1.2.1 and < 2.0.0"
 
 [dev_dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
