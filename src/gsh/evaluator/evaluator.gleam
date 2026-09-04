@@ -170,7 +170,7 @@ fn make_expression_source(
   <> imports_source(imports)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
-  <> "  terminal.println(string.inspect(\n"
+  <> "  terminal.println(gsh_internal_string.inspect(\n"
   <> "    "
   <> expression
   <> "\n"
@@ -204,7 +204,7 @@ fn make_normal_binding_source(
       <> "  "
       <> binding.source
       <> "\n"
-      <> "  terminal.println(string.inspect("
+      <> "  terminal.println(gsh_internal_string.inspect("
       <> name
       <> "))\n"
       <> "}\n"
@@ -244,7 +244,7 @@ fn make_complex_binding_source(
   <> "  "
   <> binding.source
   <> "\n"
-  <> "  terminal.println(string.inspect("
+  <> "  terminal.println(gsh_internal_string.inspect("
   <> binding.value
   <> "))\n"
   <> "}\n"

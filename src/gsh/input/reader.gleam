@@ -5,7 +5,7 @@ import gleam/erlang/process
 import gleam/option.{None, Some}
 import gsh/input/key.{
   type Key as GshKey, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace,
-  Character, Enter, Unknown,
+  Character, Enter, Tab, Unknown,
 }
 
 pub fn read_key() -> GshKey {
@@ -29,7 +29,7 @@ fn map_etch_key(code: event.KeyCode) -> GshKey {
   case code {
     event.Enter -> Enter
     event.Backspace -> Backspace
-    // These are the correct KeyCode names from etch!
+    event.Tab -> Tab
     event.UpArrow -> ArrowUp
     event.DownArrow -> ArrowDown
     event.LeftArrow -> ArrowLeft

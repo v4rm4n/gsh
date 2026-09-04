@@ -7,6 +7,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option
+import gleam/string
 import gsh/command/router as command
 import gsh/evaluator/binding
 import gsh/evaluator/evaluator
@@ -51,7 +52,7 @@ fn banner() -> Nil {
 fn shell_loop(state: ShellState) -> Nil {
   let prompt = "gsh(" <> int.to_string(state.prompt_count) <> ")> "
 
-  let input = read_command(prompt, state.history)
+  let input = read_command(prompt, state)
 
   case input {
     "" ->
@@ -107,8 +108,52 @@ fn handle_input(input: String, state: ShellState) -> Nil {
   }
 }
 
-fn read_command(prompt: String, history: List(String)) -> String {
-  read_lines(prompt, history, "", True)
+fn read_command(prompt: String, state: ShellState) -> String {
+  // Gather keywords and active variables
+  let keywords = [
+    "let",
+    "assert",
+    "import",
+    "fn",
+    "case",
+    "if",
+    "True",
+    "False",
+  ]
+  let variables =
+    list.filter_map(state.bindings, fn(b) { option.to_result(b.name, Nil) })
+
+  let module_completions =
+    list.flat_map(state.imports, fn(imp) {
+      // 1. Clean the import string (e.g., "import gleam/int" -> "gleam/int")
+      let path = string.replace(imp, "import ", "") |> string.trim()
+
+      // 2. Get the module alias (e.g., "gleam/int" -> "int")
+      let alias = case list.last(string.split(path, "/")) {
+        Ok(a) -> a
+        Error(_) -> path
+      }
+
+      // 3. Convert to Erlang format (e.g., "gleam/int" -> "gleam@int")
+      let erl_module = string.replace(path, "/", "@")
+
+      // 4. Fetch the exports from Erlang!
+      let functions = runtime.get_exports(erl_module)
+
+      // 5. Format them as "int.to_string"
+      let formatted_functions =
+        list.map(functions, fn(func) { alias <> "." <> func })
+
+      // Include the base alias (so typing "in" completes to "int") plus all its functions
+      list.append([alias], formatted_functions)
+    })
+
+  let completions =
+    keywords
+    |> list.append(variables)
+    |> list.append(module_completions)
+
+  read_lines(prompt, state.history, "", True, completions)
 }
 
 fn read_lines(
@@ -116,6 +161,7 @@ fn read_lines(
   history: List(String),
   current: String,
   first: Bool,
+  completions: List(String),
 ) -> String {
   let current_prompt = case first {
     True -> prompt
@@ -124,7 +170,7 @@ fn read_lines(
 
   io.print(current_prompt)
 
-  let line = editor.read_line(current_prompt, history)
+  let line = editor.read_line(current_prompt, history, completions)
 
   let combined = case current {
     "" -> line
@@ -134,6 +180,6 @@ fn read_lines(
   case buffer.is_complete(combined) {
     True -> combined
 
-    False -> read_lines(prompt, history, combined, False)
+    False -> read_lines(prompt, history, combined, False, completions)
   }
 }

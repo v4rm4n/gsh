@@ -15,3 +15,6 @@ pub fn enable_raw_mode() -> Result(Nil, tty.TerminalError) {
 pub fn disable_raw_mode() -> Result(Nil, tty.TerminalError) {
   tty.exit_raw()
 }
+
+@external(erlang, "ffi", "get_exports")
+pub fn get_exports(module: String) -> List(String)

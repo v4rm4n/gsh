@@ -47,3 +47,11 @@ pub fn println(text: String) -> Nil {
   |> string.replace(each: "\n", with: "\r\n")
   |> fn(t) { io.print(t <> "\r\n") }
 }
+
+pub fn clear_below() -> Nil {
+  io.print("\u{001b}[J")
+}
+
+pub fn cursor_up(count: Int) -> Nil {
+  io.print("\u{001b}[" <> int.to_string(count) <> "A")
+}
