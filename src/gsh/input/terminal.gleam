@@ -56,6 +56,10 @@ pub fn cursor_up(count: Int) -> Nil {
   io.print("\u{001b}[" <> int.to_string(count) <> "A")
 }
 
+pub fn cursor_down(count: Int) -> Nil {
+  io.print("\u{001b}[" <> int_to_string(count) <> "B")
+}
+
 pub fn clear_screen() -> Nil {
   io.print("\u{001b}[2J\u{001b}[H")
 }

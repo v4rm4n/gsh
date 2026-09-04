@@ -43,34 +43,72 @@ pub fn read_line(
   )
 }
 
-// Master render function for the transient floating menu
-fn render_editor(prompt: String, editor: Editor) -> Nil {
-  // 1. Draw the prompt and buffer (cursor ends up at the right edge)
-  display.render(prompt, editor.buffer)
+// --- 2D MULTILINE RENDERING ENGINE ---
 
-  // 2. Wipe anything below the cursor immediately (clears old menus)
+fn render_editor(
+  prompt: String,
+  old_editor: Editor,
+  new_editor: Editor,
+) -> Nil {
+  // 1. Jump back up to the prompt line from wherever the cursor CURRENTLY is
+  let before_cursor = string.slice(old_editor.buffer, 0, old_editor.cursor)
+  let cursor_y = list.length(string.split(before_cursor, "\n")) - 1
+  case cursor_y > 0 {
+    True -> terminal.cursor_up(cursor_y)
+    False -> Nil
+  }
+
+  // 2. Wipe the entire multiline block clean
+  terminal.move_start()
   terminal.clear_below()
 
-  case editor.menu {
+  // 3. Draw the new prompt and buffer
+  display.render(prompt, new_editor.buffer)
+
+  // 4. Draw the floating menu if it exists
+  case new_editor.menu {
     Some(grid) -> {
-      // 3. Count how many lines tall the grid is
       let lines_to_go_up = list.length(string.split(grid, "\n"))
-
-      // 4. Print the grid. Using terminal.print ensures \n becomes \r\n!
       terminal.print("\n" <> grid)
-
-      // 5. Jump back UP to the prompt line
       terminal.cursor_up(lines_to_go_up)
-
-      // 6. Re-render the prompt line to lock in the correct X/horizontal position
       terminal.move_start()
-      display.render(prompt, editor.buffer)
+      display.render(prompt, new_editor.buffer)
     }
     None -> Nil
   }
 
-  // 7. Snap the cursor back left if the user is editing the middle of the line
-  sync_cursor(editor)
+  // 5. Snap the cursor to its correct 2D position
+  sync_cursor(prompt, new_editor)
+}
+
+fn sync_cursor(prompt: String, editor: Editor) -> Nil {
+  // Calculate how many lines tall the buffer is, and which line the cursor is on
+  let total_lines = list.length(string.split(editor.buffer, "\n")) - 1
+  let before_cursor = string.slice(editor.buffer, 0, editor.cursor)
+  let cursor_y = list.length(string.split(before_cursor, "\n")) - 1
+
+  // Move UP from the bottom of the buffer to the target line
+  let lines_to_go_up = total_lines - cursor_y
+  case lines_to_go_up > 0 {
+    True -> terminal.cursor_up(lines_to_go_up)
+    False -> Nil
+  }
+
+  // Calculate the X position (only the first line has the prompt width pushing it!)
+  let current_line =
+    result.unwrap(list.last(string.split(before_cursor, "\n")), "")
+  let prompt_offset = case cursor_y == 0 {
+    True -> string.length(prompt)
+    False -> 0
+  }
+  let target_x = prompt_offset + string.length(current_line)
+
+  // Move RIGHT to the target X coordinate
+  terminal.move_start()
+  case target_x > 0 {
+    True -> terminal.cursor_right(target_x)
+    False -> Nil
+  }
 }
 
 fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
@@ -78,33 +116,46 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
 
   case key {
     Enter -> {
-      // Move cursor to the end of the text first so clear_below doesn't wipe the right side!
-      let distance = string.length(editor.buffer) - editor.cursor
-      case distance > 0 {
-        True -> terminal.cursor_right(distance)
+      // Jump to the very bottom of the multiline block before printing a new line!
+      let total_lines = list.length(string.split(editor.buffer, "\n")) - 1
+      let before_cursor = string.slice(editor.buffer, 0, editor.cursor)
+      let cursor_y = list.length(string.split(before_cursor, "\n")) - 1
+      let lines_to_go_down = total_lines - cursor_y
+
+      case lines_to_go_down > 0 {
+        True -> terminal.cursor_down(lines_to_go_down)
         False -> Nil
       }
+
       terminal.clear_below()
       terminal.println("")
       editor.buffer
     }
 
+    CtrlL -> {
+      terminal.clear_screen()
+      // Fake an old editor at cursor 0 so it doesn't try to jump up!
+      let fake_old = Editor(..editor, buffer: "", cursor: 0)
+      render_editor(prompt, fake_old, editor)
+      loop(prompt, editor, completions)
+    }
+
     ArrowUp -> {
       let updated = Editor(..history_up(editor), menu: None)
-      render_editor(prompt, updated)
+      render_editor(prompt, editor, updated)
       loop(prompt, updated, completions)
     }
 
     ArrowDown -> {
       let updated = Editor(..history_down(editor), menu: None)
-      render_editor(prompt, updated)
+      render_editor(prompt, editor, updated)
       loop(prompt, updated, completions)
     }
 
     ArrowLeft -> {
       let new_cursor = int.max(0, editor.cursor - 1)
       let updated = Editor(..editor, cursor: new_cursor, menu: None)
-      render_editor(prompt, updated)
+      render_editor(prompt, editor, updated)
       loop(prompt, updated, completions)
     }
 
@@ -112,7 +163,7 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
       let max_cursor = string.length(editor.buffer)
       let new_cursor = int.min(max_cursor, editor.cursor + 1)
       let updated = Editor(..editor, cursor: new_cursor, menu: None)
-      render_editor(prompt, updated)
+      render_editor(prompt, editor, updated)
       loop(prompt, updated, completions)
     }
 
@@ -124,17 +175,15 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
           editor.cursor,
           string.length(editor.buffer) - editor.cursor,
         )
-
       let updated =
         Editor(
           ..editor,
           buffer: left <> value <> right,
           cursor: editor.cursor + string.length(value),
           menu: None,
-          // Typing a letter hides the menu!
         )
 
-      render_editor(prompt, updated)
+      render_editor(prompt, editor, updated)
       loop(prompt, updated, completions)
     }
 
@@ -149,7 +198,6 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
               editor.cursor,
               string.length(editor.buffer) - editor.cursor,
             )
-
           let updated =
             Editor(
               ..editor,
@@ -158,21 +206,10 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
               menu: None,
             )
 
-          render_editor(prompt, updated)
+          render_editor(prompt, editor, updated)
           loop(prompt, updated, completions)
         }
       }
-    }
-
-    CtrlL -> {
-      // 1. Wipe the entire screen and move cursor to top-left
-      terminal.clear_screen()
-
-      // 2. Redraw the current prompt, buffer, and cursor position!
-      render_editor(prompt, editor)
-
-      // 3. Keep listening for the next key
-      loop(prompt, editor, completions)
     }
 
     Tab -> {
@@ -183,19 +220,14 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
         True -> loop(prompt, editor, completions)
         False -> {
           let matches = list.filter(completions, string.starts_with(_, word))
-
           case matches {
             [] -> loop(prompt, editor, completions)
-
             [match] ->
               insert_completion(prompt, editor, word, match, completions)
-
             _ -> {
               let common_prefix = longest_common_prefix(matches)
-
               case common_prefix == word {
-                False -> {
-                  // Partial match autofill (e.g. string.to_)
+                False ->
                   insert_completion(
                     prompt,
                     editor,
@@ -203,14 +235,10 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
                     common_prefix,
                     completions,
                   )
-                }
                 True -> {
-                  // Generate the transient menu and update the state
                   let grid = format_grid(matches)
                   let updated = Editor(..editor, menu: Some(grid))
-
-                  render_editor(prompt, updated)
-                  // <-- Redraws on the SAME line!
+                  render_editor(prompt, editor, updated)
                   loop(prompt, updated, completions)
                 }
               }
@@ -232,7 +260,6 @@ fn insert_completion(
   completions: List(String),
 ) -> String {
   let remainder = string.drop_start(match, string.length(word))
-
   let left = string.slice(editor.buffer, 0, editor.cursor)
   let right =
     string.slice(
@@ -249,7 +276,7 @@ fn insert_completion(
       menu: None,
     )
 
-  render_editor(prompt, updated)
+  render_editor(prompt, editor, updated)
   loop(prompt, updated, completions)
 }
 
@@ -323,15 +350,6 @@ fn history_down(editor: Editor) -> Editor {
         }
       }
     }
-  }
-}
-
-fn sync_cursor(editor: Editor) -> Nil {
-  let distance_from_end = string.length(editor.buffer) - editor.cursor
-
-  case distance_from_end > 0 {
-    True -> terminal.cursor_left(distance_from_end)
-    False -> Nil
   }
 }
 
