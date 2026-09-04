@@ -39,6 +39,8 @@ pub fn evaluate(
       }
   }
 
+  let _ = simplifile.create_directory("test")
+
   case simplifile.write(to: evaluator_path, contents: source) {
     Ok(_) -> {
       let result = run(parsed_binding)

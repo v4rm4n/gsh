@@ -9,5 +9,6 @@ pub type Key {
   ArrowDown
   ArrowLeft
   ArrowRight
+  CtrlL
   Unknown
 }

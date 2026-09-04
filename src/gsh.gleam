@@ -86,6 +86,16 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       Nil
     }
 
+    command.Clear -> {
+      terminal.clear_screen()
+      shell_loop(ShellState(
+        state.prompt_count + 1,
+        state.bindings,
+        state.imports,
+        history,
+      ))
+    }
+
     command.NotCommand -> {
       // 3. PASS IMPORTS to the evaluator
       let result = evaluator.evaluate(input, state.bindings, state.imports)

@@ -9,6 +9,7 @@ import gsh/evaluator/binding.{type Binding}
 pub type CommandResult {
   Handled
   Exit
+  Clear
   NotCommand
 }
 
@@ -29,6 +30,9 @@ pub fn handle(
     }
 
     "k()" -> Exit
+
+    // Cleaner than `clear()`
+    "clear" -> Clear
 
     "l()" -> {
       bindings.show(bindings)

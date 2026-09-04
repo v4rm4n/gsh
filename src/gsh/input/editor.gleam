@@ -6,7 +6,8 @@ import gleam/result
 import gleam/string
 import gsh/input/display
 import gsh/input/key.{
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character, Enter, Tab,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character, CtrlL, Enter,
+  Tab,
 }
 import gsh/input/reader
 import gsh/input/terminal
@@ -161,6 +162,17 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
           loop(prompt, updated, completions)
         }
       }
+    }
+
+    CtrlL -> {
+      // 1. Wipe the entire screen and move cursor to top-left
+      terminal.clear_screen()
+
+      // 2. Redraw the current prompt, buffer, and cursor position!
+      render_editor(prompt, editor)
+
+      // 3. Keep listening for the next key
+      loop(prompt, editor, completions)
     }
 
     Tab -> {

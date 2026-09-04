@@ -55,3 +55,7 @@ pub fn clear_below() -> Nil {
 pub fn cursor_up(count: Int) -> Nil {
   io.print("\u{001b}[" <> int.to_string(count) <> "A")
 }
+
+pub fn clear_screen() -> Nil {
+  io.print("\u{001b}[2J\u{001b}[H")
+}
