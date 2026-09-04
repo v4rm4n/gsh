@@ -11,6 +11,7 @@ import gleam/string
 import gsh/command/router as command
 import gsh/evaluator/binding
 import gsh/evaluator/evaluator
+import gsh/evaluator/runner
 import gsh/input/buffer
 import gsh/input/editor
 import gsh/input/terminal
@@ -96,24 +97,74 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       ))
     }
 
+    command.Compile -> {
+      case runner.build_project() {
+        // If the output is empty, nothing changed.
+        Ok("") -> terminal.println("Noop")
+
+        // If it succeeded and has output, print it and return Ok
+        Ok(output) -> {
+          terminal.println(output)
+          terminal.println("Ok")
+        }
+
+        // If it failed, print the compiler error and return Error
+        Error(#(_, output)) -> {
+          terminal.println(output)
+          terminal.println("Error")
+        }
+      }
+
+      shell_loop(ShellState(
+        state.prompt_count + 1,
+        state.bindings,
+        state.imports,
+        history,
+      ))
+    }
+
     command.NotCommand -> {
-      // 3. PASS IMPORTS to the evaluator
-      let result = evaluator.evaluate(input, state.bindings, state.imports)
+      // 1. Check if they are trying to import something they already imported
+      let is_duplicate_import =
+        string.starts_with(input, "import ")
+        && list.contains(state.imports, input)
 
-      terminal.print(result.output)
+      case is_duplicate_import {
+        True -> {
+          terminal.println("Discarded duplicate import")
 
-      let bindings = case result.new_binding {
-        option.Some(binding) -> list.append(state.bindings, [binding])
-        option.None -> state.bindings
+          shell_loop(ShellState(
+            state.prompt_count + 1,
+            state.bindings,
+            state.imports,
+            history,
+          ))
+        }
+
+        False -> {
+          // 2. Normal evaluation path
+          let result = evaluator.evaluate(input, state.bindings, state.imports)
+
+          terminal.print(result.output)
+
+          let bindings = case result.new_binding {
+            option.Some(binding) -> list.append(state.bindings, [binding])
+            option.None -> state.bindings
+          }
+
+          let imports = case result.new_import {
+            option.Some(imp) -> list.append(state.imports, [imp])
+            option.None -> state.imports
+          }
+
+          shell_loop(ShellState(
+            state.prompt_count + 1,
+            bindings,
+            imports,
+            history,
+          ))
+        }
       }
-
-      // 4. SAVE NEW IMPORTS returned by the evaluator
-      let imports = case result.new_import {
-        option.Some(imp) -> list.append(state.imports, [imp])
-        option.None -> state.imports
-      }
-
-      shell_loop(ShellState(state.prompt_count + 1, bindings, imports, history))
     }
   }
 }

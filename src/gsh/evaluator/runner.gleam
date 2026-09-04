@@ -23,6 +23,11 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
   }
 }
 
+pub fn build_project() -> Result(String, #(Int, String)) {
+  // Run gleam build in the current directory
+  shellout.command(run: "gleam", with: ["build"], in: ".", opt: [])
+}
+
 pub fn run(binding: Option(Binding)) -> Evaluation {
   case
     shellout.command(

@@ -10,6 +10,7 @@ pub type CommandResult {
   Handled
   Exit
   Clear
+  Compile
   NotCommand
 }
 
@@ -33,6 +34,8 @@ pub fn handle(
 
     // Cleaner than `clear()`
     "clear" -> Clear
+
+    "compile" -> Compile
 
     "l()" -> {
       bindings.show(bindings)

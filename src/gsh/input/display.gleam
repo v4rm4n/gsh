@@ -1,13 +1,19 @@
 // src/gsh/input/display.gleam
 
 import contour
+import gleam/list
+import gleam/string
 import gsh/input/terminal
 
 pub fn render(prompt: String, buffer: String) -> Nil {
   terminal.clear_line()
 
-  // Pass the raw buffer through contour before sticking it on the prompt
-  let highlighted_buffer = contour.to_ansi(buffer)
+  let quote_count = list.count(string.to_graphemes(buffer), fn(c) { c == "\"" })
 
-  terminal.print(prompt <> highlighted_buffer)
+  let display_buffer = case quote_count % 2 == 0 {
+    True -> contour.to_ansi(buffer)
+    False -> buffer
+  }
+
+  terminal.print(prompt <> display_buffer)
 }

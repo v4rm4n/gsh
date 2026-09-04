@@ -10,26 +10,26 @@ pub fn is_complete(input: String) -> Bool {
 }
 
 type Brackets {
-  Brackets(paren: Int, square: Int, curly: Int)
+  Brackets(paren: Int, square: Int, curly: Int, in_string: Bool)
 }
 
 fn count_brackets(input: String) -> Brackets {
   string.to_graphemes(input)
-  |> list.fold(Brackets(0, 0, 0), fn(acc, char) {
-    case char {
-      "(" -> Brackets(acc.paren + 1, acc.square, acc.curly)
+  |> list.fold(Brackets(0, 0, 0, False), fn(acc, char) {
+    case char, acc.in_string {
+      // Toggle string state when we see an unescaped quote
+      "\"", in_str -> Brackets(..acc, in_string: !in_str)
 
-      ")" -> Brackets(acc.paren - 1, acc.square, acc.curly)
+      // If we are inside a string, ignore all brackets!
+      _, True -> acc
 
-      "[" -> Brackets(acc.paren, acc.square + 1, acc.curly)
-
-      "]" -> Brackets(acc.paren, acc.square - 1, acc.curly)
-
-      "{" -> Brackets(acc.paren, acc.square, acc.curly + 1)
-
-      "}" -> Brackets(acc.paren, acc.square, acc.curly - 1)
-
-      _ -> acc
+      "(", False -> Brackets(..acc, paren: acc.paren + 1)
+      ")", False -> Brackets(..acc, paren: acc.paren - 1)
+      "[", False -> Brackets(..acc, square: acc.square + 1)
+      "]", False -> Brackets(..acc, square: acc.square - 1)
+      "{", False -> Brackets(..acc, curly: acc.curly + 1)
+      "}", False -> Brackets(..acc, curly: acc.curly - 1)
+      _, _ -> acc
     }
   })
 }
