@@ -16,7 +16,27 @@ pub fn format_output(output: String) -> String {
 pub fn format_error(output: String) -> String {
   output
   |> string.trim()
+  |> hide_internal_path()
   <> "\n"
+}
+
+fn hide_internal_path(output: String) -> String {
+  output
+  |> string.split("\n")
+  |> list.map(fn(line) {
+    // Look for the specific file name the evaluator uses
+    case string.split_once(line, on: "gsh_eval.gleam") {
+      Ok(#(before, after)) -> {
+        // Strip out the absolute path directory structure, preserving the UI border
+        case string.split_once(before, on: "┌─ ") {
+          Ok(#(padding, _path)) -> padding <> "┌─ REPL" <> after
+          Error(_) -> line
+        }
+      }
+      Error(_) -> line
+    }
+  })
+  |> string.join("\n")
 }
 
 fn filter_warning_lines(

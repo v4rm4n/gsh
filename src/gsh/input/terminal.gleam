@@ -43,5 +43,7 @@ pub fn print(text: String) -> Nil {
 }
 
 pub fn println(text: String) -> Nil {
-  io.print(text <> "\r\n")
+  text
+  |> string.replace(each: "\n", with: "\r\n")
+  |> fn(t) { io.print(t <> "\r\n") }
 }
