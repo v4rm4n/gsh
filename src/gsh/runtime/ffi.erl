@@ -4,7 +4,10 @@
     system_version/0,
     app_version/1,
     get_exports/1,
-    load_and_run/2
+    load_and_run/2,
+    store_put/2,
+    store_get/1,
+    store_has/1
 ]).
 
 system_version() ->
@@ -65,3 +68,13 @@ load_and_run(ModuleNameBin, FunctionNameBin) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+store_put(KeyBin, Value) ->
+    put(KeyBin, Value),
+    Value.
+
+store_get(KeyBin) ->
+    get(KeyBin).
+
+store_has(KeyBin) ->
+    get(KeyBin) =/= undefined.

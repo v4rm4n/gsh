@@ -1,4 +1,5 @@
 // src/gsh/evaluator/evaluator.gleam
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -25,7 +26,6 @@ pub fn evaluate(
   let is_function =
     string.starts_with(input, "fn ") || string.starts_with(input, "pub fn ")
 
-  // Don't check for `let ` if it's an import, type, or top-level function
   let parsed_binding = case is_import || is_type || is_function {
     True -> None
     False ->
@@ -72,10 +72,8 @@ pub fn evaluate(
   case simplifile.write(to: evaluator_path, contents: source) {
     Ok(_) -> {
       let result = run(parsed_binding)
-
       let _ = simplifile.delete_all(paths: [evaluator_path])
 
-      // Intercept results for top-level definitions
       case is_import, is_type, is_function, result.success {
         True, _, _, True ->
           Evaluation(..result, new_import: Some(input), output: "")
@@ -130,7 +128,6 @@ fn parse_binding(source: String) -> Option(Binding) {
       LetAssert,
       string.remove_prefix(from: source, matching: "let assert "),
     )
-
     False -> #(Let, string.remove_prefix(from: source, matching: "let "))
   }
 
@@ -138,9 +135,7 @@ fn parse_binding(source: String) -> Option(Binding) {
     Ok(#(pattern, value)) -> {
       let pattern = string.trim(pattern)
       let value = string.trim(value)
-
       let reference = extract_simple_reference(pattern)
-
       Some(Binding(
         kind: kind,
         source: source,
@@ -149,7 +144,6 @@ fn parse_binding(source: String) -> Option(Binding) {
         value: value,
       ))
     }
-
     Error(_) -> None
   }
 }
@@ -158,13 +152,11 @@ fn extract_simple_reference(pattern: String) -> Option(String) {
   case string.split_once(pattern, on: ":") {
     Ok(#(name, _type_annotation)) -> {
       let name = string.trim(name)
-
       case is_simple_identifier(name) {
         True -> Some(name)
         False -> None
       }
     }
-
     Error(_) ->
       case is_simple_identifier(pattern) {
         True -> Some(pattern)
@@ -176,11 +168,9 @@ fn extract_simple_reference(pattern: String) -> Option(String) {
 fn is_simple_identifier(value: String) -> Bool {
   case value {
     "_" -> False
-
     _ ->
       case string.to_graphemes(value) {
         [] -> False
-
         [first, ..rest] ->
           is_identifier_start(first) && list.all(rest, is_identifier_continue)
       }
@@ -195,10 +185,12 @@ fn is_identifier_continue(value: String) -> Bool {
   string.contains(does: "abcdefghijklmnopqrstuvwxyz_0123456789", contain: value)
 }
 
+// INJECT THE STORE IMPORT SO CACHING ALWAYS WORKS
 fn imports_source(imports: List(String)) -> String {
+  let base = "import gsh/runtime/store as gsh_store\n"
   case imports {
-    [] -> ""
-    _ -> string.join(imports, "\n") <> "\n"
+    [] -> base
+    _ -> base <> string.join(imports, "\n") <> "\n"
   }
 }
 
@@ -309,6 +301,7 @@ fn make_normal_binding_source(
   types: List(String),
   functions: List(String),
 ) -> String {
+  let index = list.length(bindings)
   case binding.name {
     Some(name) ->
       source.header(True)
@@ -317,9 +310,7 @@ fn make_normal_binding_source(
       <> functions_source(functions)
       <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
-      <> "  "
-      <> binding.source
-      <> "\n"
+      <> generate_cached_binding(binding, index)
       <> "  terminal.println(gsh_internal_string.inspect("
       <> name
       <> "))\n"
@@ -337,15 +328,14 @@ fn make_assert_source(
   types: List(String),
   functions: List(String),
 ) -> String {
+  let index = list.length(bindings)
   source.header(False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  "
-  <> binding.source
-  <> "\n"
+  <> generate_cached_binding(binding, index)
   <> "  terminal.println(\"ok\")\n"
   <> "}\n"
 }
@@ -357,32 +347,62 @@ fn make_complex_binding_source(
   types: List(String),
   functions: List(String),
 ) -> String {
+  let index = list.length(bindings)
   source.header(True)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  "
-  <> binding.source
-  <> "\n"
-  <> "  terminal.println(gsh_internal_string.inspect("
-  <> binding.value
-  <> "))\n"
+  <> generate_cached_binding(binding, index)
+  <> "  terminal.println(\"ok\")\n"
   <> "}\n"
 }
 
+// GENERATES THE MAGIC CACHING WRAPPER
+fn generate_cached_binding(binding: Binding, index: Int) -> String {
+  let cache_key = "gsh_bind_" <> int.to_string(index)
+  let keyword = case binding.kind {
+    Let -> "let "
+    LetAssert -> "let assert "
+  }
+
+  "  "
+  <> keyword
+  <> binding.pattern
+  <> " = case gsh_store.has(\""
+  <> cache_key
+  <> "\") {\n"
+  <> "    True -> gsh_store.get(\""
+  <> cache_key
+  <> "\")\n"
+  <> "    False -> {\n"
+  <> "      let gsh_internal_val = "
+  <> binding.value
+  <> "\n"
+  <> "      gsh_store.put(\""
+  <> cache_key
+  <> "\", gsh_internal_val)\n"
+  <> "      gsh_internal_val\n"
+  <> "    }\n"
+  <> "  }\n"
+}
+
 fn bindings_source(bindings: List(Binding)) -> String {
+  bindings_source_loop(bindings, 0)
+}
+
+fn bindings_source_loop(bindings: List(Binding), index: Int) -> String {
   case bindings {
     [] -> ""
-
     [binding, ..rest] -> {
       let mark_used = case binding.name {
         Some(name) -> "  let _ = " <> name <> "\n"
         None -> ""
       }
-
-      "  " <> binding.source <> "\n" <> mark_used <> bindings_source(rest)
+      generate_cached_binding(binding, index)
+      <> mark_used
+      <> bindings_source_loop(rest, index + 1)
     }
   }
 }
