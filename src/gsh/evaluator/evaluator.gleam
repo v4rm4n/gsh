@@ -1,5 +1,4 @@
 // src/gsh/evaluator/evaluator.gleam
-
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -15,13 +14,16 @@ pub fn evaluate(
   input: String,
   bindings: List(Binding),
   imports: List(String),
+  types: List(String),
 ) -> Evaluation {
   let input = string.trim(input)
 
   let is_import = string.starts_with(input, "import ")
+  let is_type =
+    string.starts_with(input, "type ") || string.starts_with(input, "pub type ")
 
-  // Don't bother checking for `let ` if we already know it's an import
-  let parsed_binding = case is_import {
+  // Don't check for `let ` if it's an import or a type definition
+  let parsed_binding = case is_import || is_type {
     True -> None
     False ->
       case string.starts_with(input, "let ") {
@@ -31,11 +33,16 @@ pub fn evaluate(
   }
 
   let source = case is_import {
-    True -> make_import_source(input, bindings, imports)
+    True -> make_import_source(input, bindings, imports, types)
     False ->
-      case parsed_binding {
-        Some(binding) -> make_binding_source(binding, bindings, imports)
-        None -> make_expression_source(input, bindings, imports)
+      case is_type {
+        True -> make_type_source(input, bindings, imports, types)
+        False ->
+          case parsed_binding {
+            Some(binding) ->
+              make_binding_source(binding, bindings, imports, types)
+            None -> make_expression_source(input, bindings, imports, types)
+          }
       }
   }
 
@@ -47,11 +54,17 @@ pub fn evaluate(
 
       let _ = simplifile.delete_all(paths: [evaluator_path])
 
-      // Intercept the result! If it was an import and it compiled successfully,
-      // save the import string and clear the dummy output.
-      case is_import, result.success {
-        True, True -> Evaluation(..result, new_import: Some(input), output: "")
-        _, _ -> result
+      // Intercept results for top-level definitions
+      case is_import, is_type, result.success {
+        True, _, True ->
+          Evaluation(..result, new_import: Some(input), output: "")
+        _, True, True ->
+          Evaluation(
+            ..result,
+            new_type: Some(input),
+            output: "// Type defined\n",
+          )
+        _, _, _ -> result
       }
     }
 
@@ -62,6 +75,7 @@ pub fn evaluate(
         error_kind: CompileError,
         new_binding: None,
         new_import: None,
+        new_type: None,
       )
   }
 }
@@ -115,8 +129,6 @@ fn extract_simple_reference(pattern: String) -> Option(String) {
   }
 }
 
-// GSH only recognizes ordinary reusable variable names here.
-// `_` itself is a discard pattern and cannot be referenced later.
 fn is_simple_identifier(value: String) -> Bool {
   case value {
     "_" -> False
@@ -146,13 +158,53 @@ fn imports_source(imports: List(String)) -> String {
   }
 }
 
+fn types_source(types: List(String)) -> String {
+  case types {
+    [] -> ""
+    _ -> {
+      let pub_types =
+        list.map(types, fn(t) {
+          case string.starts_with(t, "pub ") {
+            True -> t
+            False -> "pub " <> t
+          }
+        })
+      string.join(pub_types, "\n\n") <> "\n\n"
+    }
+  }
+}
+
+fn make_type_source(
+  new_type: String,
+  bindings: List(Binding),
+  imports: List(String),
+  types: List(String),
+) -> String {
+  let pub_type = case string.starts_with(new_type, "pub ") {
+    True -> new_type
+    False -> "pub " <> new_type
+  }
+
+  source.header(False)
+  <> imports_source(imports)
+  <> types_source(types)
+  <> pub_type
+  <> "\n\n"
+  <> "pub fn main() {\n"
+  <> bindings_source(bindings)
+  <> "  terminal.println(\"// Type defined\")\n"
+  <> "}\n"
+}
+
 fn make_import_source(
   new_import: String,
   bindings: List(Binding),
   imports: List(String),
+  types: List(String),
 ) -> String {
   source.header(False)
   <> imports_source(imports)
+  <> types_source(types)
   <> new_import
   <> "\n"
   <> "pub fn main() {\n"
@@ -161,22 +213,20 @@ fn make_import_source(
   <> "}\n"
 }
 
-// Generate a temporary module for evaluating a normal expression
-// while replaying successful bindings from the current session.
 fn make_expression_source(
   expression: String,
   bindings: List(Binding),
   imports: List(String),
+  types: List(String),
 ) -> String {
   source.header(True)
   <> imports_source(imports)
+  <> types_source(types)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
-  <> "  terminal.println(gsh_internal_string.inspect(\n"
-  <> "    "
+  <> "  terminal.println(gsh_internal_string.inspect("
   <> expression
-  <> "\n"
-  <> "  ))\n"
+  <> "))\n"
   <> "}\n"
 }
 
@@ -184,11 +234,11 @@ fn make_binding_source(
   binding: Binding,
   bindings: List(Binding),
   imports: List(String),
+  types: List(String),
 ) -> String {
   case binding.kind {
-    Let -> make_normal_binding_source(binding, bindings, imports)
-
-    LetAssert -> make_assert_source(binding, bindings, imports)
+    Let -> make_normal_binding_source(binding, bindings, imports, types)
+    LetAssert -> make_assert_source(binding, bindings, imports, types)
   }
 }
 
@@ -196,11 +246,13 @@ fn make_normal_binding_source(
   binding: Binding,
   bindings: List(Binding),
   imports: List(String),
+  types: List(String),
 ) -> String {
   case binding.name {
     Some(name) ->
       source.header(True)
       <> imports_source(imports)
+      <> types_source(types)
       <> "pub fn main() {\n"
       <> bindings_source(bindings)
       <> "  "
@@ -211,7 +263,7 @@ fn make_normal_binding_source(
       <> "))\n"
       <> "}\n"
 
-    None -> make_complex_binding_source(binding, bindings, imports)
+    None -> make_complex_binding_source(binding, bindings, imports, types)
   }
 }
 
@@ -219,9 +271,11 @@ fn make_assert_source(
   binding: Binding,
   bindings: List(Binding),
   imports: List(String),
+  types: List(String),
 ) -> String {
   source.header(False)
   <> imports_source(imports)
+  <> types_source(types)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  "
@@ -231,16 +285,15 @@ fn make_assert_source(
   <> "}\n"
 }
 
-// Complex patterns currently need a temporary value so GSH can display
-// the complete value produced by the binding. This is temporary until
-// GSH has richer pattern information.
 fn make_complex_binding_source(
   binding: Binding,
   bindings: List(Binding),
   imports: List(String),
+  types: List(String),
 ) -> String {
   source.header(True)
   <> imports_source(imports)
+  <> types_source(types)
   <> "pub fn main() {\n"
   <> bindings_source(bindings)
   <> "  "
@@ -259,7 +312,6 @@ fn bindings_source(bindings: List(Binding)) -> String {
     [binding, ..rest] -> {
       let mark_used = case binding.name {
         Some(name) -> "  let _ = " <> name <> "\n"
-
         None -> ""
       }
 

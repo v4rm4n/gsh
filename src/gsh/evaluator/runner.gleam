@@ -15,7 +15,6 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
     Some(binding) ->
       case binding.kind {
         Let -> Some(binding)
-
         LetAssert -> None
       }
 
@@ -24,7 +23,6 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
 }
 
 pub fn build_project() -> Result(String, #(Int, String)) {
-  // Run gleam build in the current directory
   shellout.command(run: "gleam", with: ["build"], in: ".", opt: [])
 }
 
@@ -49,7 +47,7 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
         error_kind: NoError,
         new_binding: persist_binding(binding),
         new_import: None,
-        // <-- ADDED
+        new_type: None,
       )
 
     Error(#(_status, output)) ->
@@ -59,7 +57,7 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
         error_kind: classify_error(output),
         new_binding: None,
         new_import: None,
-        // <-- ADDED
+        new_type: None,
       )
   }
 }
@@ -67,7 +65,6 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
 fn classify_error(output: String) -> ErrorKind {
   case string.contains(output, "stacktrace") {
     True -> RuntimeError
-
     False -> CompileError
   }
 }

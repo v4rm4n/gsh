@@ -10,6 +10,7 @@ pub type Evaluation {
     error_kind: ErrorKind,
     new_binding: Option(Binding),
     new_import: Option(String),
+    new_type: Option(String),
   )
 }
 

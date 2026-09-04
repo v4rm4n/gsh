@@ -17,13 +17,12 @@ import gsh/input/editor
 import gsh/input/terminal
 import gsh/runtime/runtime.{app_version, system_version}
 
-// GSH keeps shell information immutable and passes the updated
-// state into the next REPL iteration
 type ShellState {
   ShellState(
     prompt_count: Int,
     bindings: List(binding.Binding),
     imports: List(String),
+    types: List(String),
     history: List(String),
   )
 }
@@ -33,8 +32,8 @@ pub fn main() -> Nil {
 
   banner()
 
-  // 2. INITIALIZE with empty imports
-  shell_loop(ShellState(1, [], [], []))
+  // Initialized with empty types list
+  shell_loop(ShellState(1, [], [], [], []))
 
   let assert Ok(_) = tty.exit_raw()
 
@@ -61,6 +60,7 @@ fn shell_loop(state: ShellState) -> Nil {
         state.prompt_count,
         state.bindings,
         state.imports,
+        state.types,
         state.history,
       ))
 
@@ -77,7 +77,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.prompt_count + 1,
         state.bindings,
         state.imports,
-        // <-- Pass imports
+        state.types,
         history,
       ))
 
@@ -93,22 +93,20 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.prompt_count + 1,
         state.bindings,
         state.imports,
+        state.types,
         history,
       ))
     }
 
     command.Compile -> {
       case runner.build_project() {
-        // If the output is empty, nothing changed.
         Ok("") -> terminal.println("Noop")
 
-        // If it succeeded and has output, print it and return Ok
         Ok(output) -> {
           terminal.println(output)
           terminal.println("Ok")
         }
 
-        // If it failed, print the compiler error and return Error
         Error(#(_, output)) -> {
           terminal.println(output)
           terminal.println("Error")
@@ -119,12 +117,12 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.prompt_count + 1,
         state.bindings,
         state.imports,
+        state.types,
         history,
       ))
     }
 
     command.NotCommand -> {
-      // 1. Check if they are trying to import something they already imported
       let is_duplicate_import =
         string.starts_with(input, "import ")
         && list.contains(state.imports, input)
@@ -137,13 +135,20 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             state.prompt_count + 1,
             state.bindings,
             state.imports,
+            state.types,
             history,
           ))
         }
 
         False -> {
-          // 2. Normal evaluation path
-          let result = evaluator.evaluate(input, state.bindings, state.imports)
+          // Pass state.types into the evaluator
+          let result =
+            evaluator.evaluate(
+              input,
+              state.bindings,
+              state.imports,
+              state.types,
+            )
 
           terminal.print(result.output)
 
@@ -157,10 +162,17 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             option.None -> state.imports
           }
 
+          // Persist newly evaluated custom types
+          let types = case result.new_type {
+            option.Some(t) -> list.append(state.types, [t])
+            option.None -> state.types
+          }
+
           shell_loop(ShellState(
             state.prompt_count + 1,
             bindings,
             imports,
+            types,
             history,
           ))
         }
@@ -170,42 +182,27 @@ fn handle_input(input: String, state: ShellState) -> Nil {
 }
 
 fn read_command(prompt: String, state: ShellState) -> String {
-  // Gather keywords and active variables
   let keywords = [
-    "let",
-    "assert",
-    "import",
-    "fn",
-    "case",
-    "if",
-    "True",
-    "False",
+    "let", "assert", "import", "type", "fn", "case", "if", "True", "False",
   ]
   let variables =
     list.filter_map(state.bindings, fn(b) { option.to_result(b.name, Nil) })
 
   let module_completions =
     list.flat_map(state.imports, fn(imp) {
-      // 1. Clean the import string (e.g., "import gleam/int" -> "gleam/int")
       let path = string.replace(imp, "import ", "") |> string.trim()
 
-      // 2. Get the module alias (e.g., "gleam/int" -> "int")
       let alias = case list.last(string.split(path, "/")) {
         Ok(a) -> a
         Error(_) -> path
       }
 
-      // 3. Convert to Erlang format (e.g., "gleam/int" -> "gleam@int")
       let erl_module = string.replace(path, "/", "@")
-
-      // 4. Fetch the exports from Erlang!
       let functions = runtime.get_exports(erl_module)
 
-      // 5. Format them as "int.to_string"
       let formatted_functions =
         list.map(functions, fn(func) { alias <> "." <> func })
 
-      // Include the base alias (so typing "in" completes to "int") plus all its functions
       list.append([alias], formatted_functions)
     })
 
