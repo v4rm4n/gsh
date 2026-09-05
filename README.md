@@ -27,6 +27,19 @@ gleam run -m gsh
 gleam run -m gsh -- my_app worker_pool bg_module_1
 ```
 
+## Built-in Commands
+GSH includes several built-in commands to manage your session:
+- `h()` - Show the help menu
+- `v()` - Show the current GSH version
+- `l()` - List all currently active variable bindings
+- `history()` - Show the history of executed commands
+- `compile` - Recompile the host Gleam project without leaving the shell
+- `clear` - Clear the terminal screen (or Ctrl + L)
+- `k()` - Exit the shell
+
+## Target limitations
+> **Note:** GSH is heavily tied to the Erlang VM (BEAM) for state persistence and dynamic evaluation. It **does not** support the JavaScript target.
+
 ## Why a REPL?
 After using Elixir's `iex`, OCaml's `utop` or even Rust's `evcxr`. I really wanted to build a tool for Gleam that gets me closer to the BEAM. **GSH**, expanded as **Gleam SHell** is a materialization of that dream.
 
@@ -75,6 +88,15 @@ Gleam code -> Gleam compiler -> Erlang Target -> BEAM
 | **Built-in Helpers** | `pid()` (easily extensible) | `h()`, `i()`, `v()`, `pid()`, etc. |
 | **Autocomplete** | Keywords, bound vars, module exports | Deeply context-aware + docstrings |
 
+## Acknowledgments
+GSH stands on the shoulders of some excellent Gleam libraries:
+- [etch_erlang](https://hex.pm/packages/etch) for non-blocking raw terminal events.
+- [contour](https://hex.pm/packages/contour) for beautiful ANSI syntax highlighting.
+- [shellout](https://hex.pm/packages/shellout) for seamless Gleam compiler orchestration.
+
 ## Contributing
 
 Contributions are massively appreciated! A REPL would be a nice to have tool in the Gleam ecosystem, and there is plenty of room to grow. 
+
+<!-- ## License
+This project is licensed under the [Apache-2.0](LICENSE). -->

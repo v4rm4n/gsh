@@ -1,4 +1,12 @@
+//// The `editor` module is a custom, raw-mode multiline text editor built from scratch.
+//// 
+//// Standard input methods (like `erlang:get_line`) block the thread and do not 
+//// allow for custom keybindings, autocomplete menus, or multiline cursor traversal. 
+//// This module solves that by capturing individual keystrokes and manually 
+//// calculating 2D terminal cursor positions using ANSI escape sequences.
+
 // src/gsh/input/editor.gleam
+
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -12,18 +20,26 @@ import gsh/input/key.{
 import gsh/input/reader
 import gsh/input/terminal
 
+/// Tracks the complete state of a single REPL prompt session.
 pub type Editor {
   Editor(
+    /// The current raw text being typed by the user
     buffer: String,
+    /// The 1D index of where the cursor is inside the buffer
     cursor: Int,
+    /// Previously executed REPL commands
     history: List(String),
+    /// Current position when navigating history with ArrowUp/ArrowDown
     history_index: Int,
+    /// Temporarily saves the current typing buffer if the user arrows up into history
     saved_buffer: Option(String),
+    /// A pre-rendered string grid of autocomplete suggestions, floating below the prompt
     menu: Option(String),
-    // <-- Track the floating grid
   )
 }
 
+/// The main entry point to prompt the user for input.
+/// Initializes the editor state and starts the keystroke listener loop.
 pub fn read_line(
   prompt: String,
   history: List(String),
@@ -45,6 +61,12 @@ pub fn read_line(
 
 // --- 2D MULTILINE RENDERING ENGINE ---
 
+/// The core drawing engine. Every time a key is pressed, this function:
+/// 1. Calculates how to jump the cursor back to the start of the prompt.
+/// 2. Wipes the entire multiline block and floating menu from the terminal.
+/// 3. Redraws the new syntax-highlighted buffer.
+/// 4. Draws the autocomplete grid (if active).
+/// 5. Snaps the cursor perfectly back into its 2D coordinates within the text.
 fn render_editor(
   prompt: String,
   old_editor: Editor,
@@ -81,6 +103,8 @@ fn render_editor(
   sync_cursor(prompt, new_editor)
 }
 
+/// Translates the 1D `editor.cursor` string index into 2D (X, Y) terminal coordinates 
+/// and moves the hardware cursor there using ANSI escape sequences.
 fn sync_cursor(prompt: String, editor: Editor) -> Nil {
   // Calculate how many lines tall the buffer is, and which line the cursor is on
   let total_lines = list.length(string.split(editor.buffer, "\n")) - 1
@@ -111,6 +135,8 @@ fn sync_cursor(prompt: String, editor: Editor) -> Nil {
   }
 }
 
+/// The recursive keystroke listener. Blocks until a key is pressed, mutates the 
+/// `Editor` state accordingly, calls the rendering engine, and loops.
 fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
   let key = reader.read_key()
 
@@ -252,6 +278,8 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
   }
 }
 
+/// Takes a successfully matched autocomplete suggestion and splices it 
+/// into the user's typing buffer at the current cursor position.
 fn insert_completion(
   prompt: String,
   editor: Editor,
@@ -280,6 +308,7 @@ fn insert_completion(
   loop(prompt, updated, completions)
 }
 
+/// Replaces the current buffer with the previous command from the history list.
 fn history_up(editor: Editor) -> Editor {
   case editor.history {
     [] -> editor
@@ -312,6 +341,8 @@ fn history_up(editor: Editor) -> Editor {
   }
 }
 
+/// Moves forward in the history list, eventually restoring the user's un-submitted 
+/// text buffer if they reach the bottom.
 fn history_down(editor: Editor) -> Editor {
   case editor.history_index {
     -1 -> editor
@@ -353,6 +384,8 @@ fn history_down(editor: Editor) -> Editor {
   }
 }
 
+/// Extracts the identifier immediately to the left of the cursor, 
+/// used to match against the completions list.
 fn get_current_word(text: String) -> String {
   text
   |> string.to_graphemes()
@@ -369,6 +402,8 @@ fn is_identifier_char(c: String) -> Bool {
   )
 }
 
+/// Finds the maximum overlapping text between a list of strings.
+/// (e.g. `["process.kill", "process.is_alive"] -> "process."`)
 fn longest_common_prefix(strings: List(String)) -> String {
   case strings {
     [] -> ""
@@ -394,6 +429,8 @@ fn find_common_prefix(current: String, strings: List(String)) -> String {
 
 // --- GRID FORMATTING ---
 
+/// Takes a list of autocomplete suggestions and formats them into a clean, 
+/// multi-column grid string that spans max 80 characters wide.
 fn format_grid(items: List(String)) -> String {
   let max_len =
     list.fold(items, 0, fn(acc, item) { int.max(acc, string.length(item)) })

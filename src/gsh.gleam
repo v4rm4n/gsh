@@ -1,3 +1,13 @@
+//// `gsh` is the core entry point for the Interactive Gleam Shell.
+////
+//// It acts as a development orchestrator, providing two main capabilities:
+//// 
+//// 1. **Zero-Config Bootloader:** Intercepts CLI arguments to dynamically boot host 
+////    applications in the background (e.g., `gleam run -m gsh -- my_app`).
+//// 2. **Persistent REPL:** A live-node interactive shell that maintains VM state, 
+////    memoizes side effects, and safely handles runtime exceptions while toggling
+////    terminal raw mode to ensure clean I/O.
+
 // src/gsh.gleam
 
 import etch/erlang/tty
@@ -18,7 +28,10 @@ import gsh/input/editor
 import gsh/input/terminal
 import gsh/runtime/runtime.{app_version, system_version}
 
-type ShellState {
+/// Holds the persistent state of the shell session across evaluations.
+/// This state is passed recursively through the REPL loop to maintain history, 
+/// variable bindings, and declared types/functions.
+pub type ShellState {
   ShellState(
     prompt_count: Int,
     bindings: List(binding.Binding),
@@ -29,6 +42,11 @@ type ShellState {
   )
 }
 
+/// The main entry point. 
+/// 
+/// 1. Intercepts trailing CLI arguments to boot background applications and print their PIDs.
+/// 2. Places the terminal into raw mode for character-by-character input processing.
+/// 3. Starts the recursive REPL loop.
 pub fn main() -> Nil {
   // 1. Intercept ALL CLI arguments and boot them
   let args = runtime.get_args()
@@ -71,6 +89,7 @@ pub fn main() -> Nil {
   Nil
 }
 
+/// Prints the OTP/ERTS version and the GSH startup banner.
 fn banner() -> Nil {
   terminal.println(system_version())
   format.printf(
@@ -80,6 +99,8 @@ fn banner() -> Nil {
   terminal.println("")
 }
 
+/// The recursive heartbeat of the REPL. 
+/// Prompts for input, processes it, and recurses with the updated state.
 fn shell_loop(state: ShellState) -> Nil {
   let prompt = "gsh(" <> int.to_string(state.prompt_count) <> ")> "
 
@@ -100,6 +121,11 @@ fn shell_loop(state: ShellState) -> Nil {
   }
 }
 
+/// Routes the user's input to either internal shell commands (like exit or clear)
+/// or passes it to the evaluator engine.
+/// 
+/// Crucially, this function temporarily exits terminal raw mode during evaluation
+/// so that side-effects (like `io.println`) and background server logs render correctly.
 fn handle_input(input: String, state: ShellState) -> Nil {
   let history = list.append(state.history, [input])
 
@@ -232,6 +258,8 @@ fn handle_input(input: String, state: ShellState) -> Nil {
   }
 }
 
+/// Builds the autocompletion context (keywords, bindings, module exports) 
+/// and passes control to the line reader.
 fn read_command(prompt: String, state: ShellState) -> String {
   let keywords = [
     "let", "assert", "import", "type", "fn", "case", "if", "True", "False",
@@ -265,6 +293,8 @@ fn read_command(prompt: String, state: ShellState) -> String {
   read_lines(prompt, state.history, "", True, completions)
 }
 
+/// Reads user input and continuously buffers lines if the AST is incomplete.
+/// Uses the `...>` prompt for multiline continuations.
 fn read_lines(
   prompt: String,
   history: List(String),

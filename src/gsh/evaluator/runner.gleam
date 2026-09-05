@@ -1,4 +1,12 @@
+//// The `runner` module orchestrates the compilation and execution of the shell's 
+//// dynamically generated code.
+////
+//// It acts as the coordinator between the external system (using `shellout` to 
+//// invoke the Gleam compiler) and the internal Erlang VM (using the `runtime` 
+//// FFI to dynamically load and execute the resulting `.beam` bytecode).
+
 // src/gsh/evaluator/runner.gleam
+
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import gsh/evaluator/binding.{type Binding, Let, LetAssert}
@@ -9,6 +17,10 @@ import gsh/evaluator/result.{
 import gsh/runtime/runtime
 import shellout
 
+/// Filters whether a successful binding should be saved to the shell's persistent state.
+/// Currently, standard `Let` bindings are persisted, but strict `LetAssert` pattern 
+/// matches are discarded from the global namespace to prevent complex destructuring 
+/// from polluting the simple variable cache.
 fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
   case binding {
     Some(binding) ->
@@ -21,10 +33,20 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
   }
 }
 
+/// Triggers a full compilation of the host project using the Gleam CLI.
+/// This is used when the user types the `compile` command in the REPL, 
+/// allowing them to rebuild their background application without leaving the shell.
 pub fn build_project() -> Result(String, #(Int, String)) {
   shellout.command(run: "gleam", with: ["build"], in: ".", opt: [])
 }
 
+/// The core execution pipeline for evaluated code.
+/// 
+/// 1. Uses `shellout` to run `gleam build --target erlang`. This compiles the 
+///    temporary `gsh_eval.gleam` file into a `.beam` file without booting a new VM.
+/// 2. If compilation succeeds, it uses the `runtime` FFI to hot-load `gsh_eval.beam` 
+///    into the current VM and executes the `gsh_entry` function.
+/// 3. Catches and formats any compiler or runtime errors into a safe `Evaluation` record.
 pub fn run(binding: Option(Binding)) -> Evaluation {
   // 1. Trigger compile-only step (creates/updates .beam files without running a new VM)
   case
@@ -47,7 +69,7 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
       )
 
     Ok(_) -> {
-      // 2. Change "main" to "gsh_entry" here!
+      // 2. Dynamically load and run the freshly compiled entrypoint!
       case runtime.load_and_run("gsh_eval", "gsh_entry") {
         Ok(_) ->
           Evaluation(

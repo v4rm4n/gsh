@@ -3,12 +3,12 @@ version = "1.0.0"
 
 # Fill out these fields if you intend to generate HTML documentation or publish
 # your project to the Hex package manager.
-#
-# description = ""
-# licences = ["Apache-2.0"]
-# repository = { type = "github", user = "", repo = "" }
+
+description = "GSH is an interactive REPL for the Gleam Programming Language written in Gleam and Erlang."
+licences = ["Apache-2.0"]
+repository = { type = "github", user = "v4rm4n", repo = "gsh" }
 # links = [{ title = "Website", href = "" }]
-#
+
 # For a full reference of all the available options, you can have a look at
 # https://gleam.run/writing-gleam/gleam-toml/.
 

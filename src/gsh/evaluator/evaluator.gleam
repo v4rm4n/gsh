@@ -1,4 +1,17 @@
+//// The `evaluator` module is the beating heart of the GSH REPL.
+////
+//// Because Gleam is statically typed and compiled, we cannot evaluate raw AST 
+//// dynamically like Elixir's IEx. Instead, this module takes the user's input, 
+//// combines it with all previous session state (imports, bindings, types), 
+//// and generates a temporary `gsh_eval.gleam` file.
+////
+//// Crucially, this is where the "Side-Effect Magic Caching" happens. Every 
+//// variable assignment is wrapped in a check against the Erlang Process Dictionary, 
+//// ensuring that `let x = io.println("test")` only prints once, even as the 
+//// file is re-compiled for subsequent REPL prompts.
+
 // src/gsh/evaluator/evaluator.gleam
+
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -11,6 +24,11 @@ import simplifile
 
 const evaluator_path = "test/gsh_eval.gleam"
 
+/// The main entry point for code evaluation.
+/// 1. Analyzes the input to determine if it is an import, type, function, binding, or expression.
+/// 2. Generates the full source code for a temporary Gleam module.
+/// 3. Writes the file to disk and passes it to the `runner` to be compiled and executed.
+/// 4. Returns the result, updating the shell state if new bindings/imports were successfully evaluated.
 pub fn evaluate(
   input: String,
   bindings: List(Binding),
@@ -98,6 +116,8 @@ pub fn evaluate(
   }
 }
 
+/// Constructs the source code when the user defines a new function.
+/// Ensures the function is exposed as `pub` so it can be called in future evaluations.
 fn make_function_source(
   new_fn: String,
   bindings: List(Binding),
@@ -122,6 +142,8 @@ fn make_function_source(
   <> "}\n"
 }
 
+/// Parses a string like `let x = 5` into a structured `Binding` record, 
+/// separating the left-hand pattern from the right-hand value.
 fn parse_binding(source: String) -> Option(Binding) {
   let #(kind, without_let) = case string.starts_with(source, "let assert ") {
     True -> #(
@@ -148,6 +170,8 @@ fn parse_binding(source: String) -> Option(Binding) {
   }
 }
 
+/// Attempts to extract a simple variable name from a pattern.
+/// If the pattern is complex destructuring (like `[a, b]`), it returns `None`.
 fn extract_simple_reference(pattern: String) -> Option(String) {
   case string.split_once(pattern, on: ":") {
     Ok(#(name, _type_annotation)) -> {
@@ -185,7 +209,7 @@ fn is_identifier_continue(value: String) -> Bool {
   string.contains(does: "abcdefghijklmnopqrstuvwxyz_0123456789", contain: value)
 }
 
-// INJECT THE STORE IMPORT SO CACHING ALWAYS WORKS
+/// Injects the necessary hidden imports for the caching engine into the generated file.
 fn imports_source(imports: List(String)) -> String {
   let base =
     "import gsh/runtime/store as gsh_store\n"
@@ -213,8 +237,9 @@ fn types_source(types: List(String)) -> String {
   }
 }
 
+/// Injects previous custom functions, as well as the built-in `pid()` helper, 
+/// so they are available in the top-level scope of the evaluation.
 fn functions_source(functions: List(String)) -> String {
-  // INJECT THE `pid()` HELPER INTO EVERY EVALUATION
   let builtins =
     "pub fn pid(id: String) { gsh_internal_runtime.pid_from_string(id) }"
 
@@ -267,6 +292,8 @@ fn make_import_source(
   <> "}\n"
 }
 
+/// Generates the code for a raw expression (e.g., `1 + 1`).
+/// Evaluates the expression, inspects it to a string, and prints it.
 fn make_expression_source(
   expression: String,
   bindings: List(Binding),
@@ -366,7 +393,12 @@ fn make_complex_binding_source(
   <> "}\n"
 }
 
-// GENERATES THE MAGIC CACHING WRAPPER
+/// THE MAGIC CACHING WRAPPER
+/// 
+/// Instead of generating a raw `let x = some_expensive_function()`, this wrapper 
+/// injects code that first checks the Erlang Process Dictionary (`gsh_store`).
+/// If the value was evaluated in a previous prompt, it pulls it directly from memory. 
+/// If it's a new binding, it evaluates it once, stores it in memory, and returns it.
 fn generate_cached_binding(binding: Binding, index: Int) -> String {
   let cache_key = "gsh_bind_" <> int.to_string(index)
   let keyword = case binding.kind {
@@ -395,6 +427,9 @@ fn generate_cached_binding(binding: Binding, index: Int) -> String {
   <> "  }\n"
 }
 
+/// Recursively iterates over all historical bindings in the REPL session 
+/// and regenerates them inside the new `gsh_entry()` function. 
+/// It also appends a dummy `let _ = name` to prevent Gleam's unused variable warnings.
 fn bindings_source(bindings: List(Binding)) -> String {
   bindings_source_loop(bindings, 0)
 }
