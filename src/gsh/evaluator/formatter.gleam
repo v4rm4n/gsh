@@ -46,12 +46,17 @@ fn hide_internal_path(output: String) -> String {
   output
   |> string.split("\n")
   |> list.map(fn(line) {
-    // Look for the specific file name the evaluator uses
-    case string.split_once(line, on: "gsh_eval.gleam") {
+    // Look for the prefix instead of the exact file name
+    case string.split_once(line, on: "gsh_eval_") {
       Ok(#(before, after)) -> {
-        // Strip out the absolute path directory structure, preserving the UI border
         case string.split_once(before, on: "┌─ ") {
-          Ok(#(padding, _path)) -> padding <> "┌─ REPL" <> after
+          Ok(#(padding, _path)) -> {
+            // Strip out the timestamp and .gleam extension to keep it clean
+            case string.split_once(after, on: ".gleam") {
+              Ok(#(_, rest)) -> padding <> "┌─ REPL" <> rest
+              Error(_) -> line
+            }
+          }
           Error(_) -> line
         }
       }

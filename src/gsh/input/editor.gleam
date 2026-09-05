@@ -82,7 +82,8 @@ fn render_editor(
 
   // 2. Wipe the entire multiline block clean
   terminal.move_start()
-  terminal.clear_below()
+  // Explicitly clear from cursor to end of screen!
+  terminal.print("\u{001b}[J")
 
   // 3. Draw the new prompt and buffer
   display.render(prompt, new_editor.buffer)
@@ -101,6 +102,44 @@ fn render_editor(
 
   // 5. Snap the cursor to its correct 2D position
   sync_cursor(prompt, new_editor)
+}
+
+fn move_cursor_up(buffer: String, cursor: Int) -> Int {
+  let before = string.slice(buffer, 0, cursor)
+  let parts = string.split(before, "\n")
+  case list.length(parts) > 1 {
+    False -> cursor
+    // Already on top line
+    True -> {
+      let current_col = string.length(result.unwrap(list.last(parts), ""))
+      let prev_line =
+        result.unwrap(list.last(list.take(parts, list.length(parts) - 1)), "")
+      let new_col = int.min(current_col, string.length(prev_line))
+      let up_to_prev =
+        string.length(before) - current_col - string.length(prev_line) - 1
+      up_to_prev + new_col
+    }
+  }
+}
+
+fn move_cursor_down(buffer: String, cursor: Int) -> Int {
+  let before = string.slice(buffer, 0, cursor)
+  let after = string.slice(buffer, cursor, string.length(buffer) - cursor)
+  let current_col =
+    string.length(result.unwrap(list.last(string.split(before, "\n")), ""))
+
+  case string.split_once(after, "\n") {
+    Error(_) -> cursor
+    // No newline below
+    Ok(#(_, next_remainder)) -> {
+      let next_line =
+        result.unwrap(list.first(string.split(next_remainder, "\n")), "")
+      let new_col = int.min(current_col, string.length(next_line))
+      let dist_to_eol =
+        string.length(result.unwrap(list.first(string.split(after, "\n")), ""))
+      cursor + dist_to_eol + 1 + new_col
+    }
+  }
 }
 
 /// Translates the 1D `editor.cursor` string index into 2D (X, Y) terminal coordinates 
@@ -142,18 +181,17 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
 
   case key {
     Enter -> {
-      // Jump to the very bottom of the multiline block before printing a new line!
-      let total_lines = list.length(string.split(editor.buffer, "\n")) - 1
-      let before_cursor = string.slice(editor.buffer, 0, editor.cursor)
-      let cursor_y = list.length(string.split(before_cursor, "\n")) - 1
-      let lines_to_go_down = total_lines - cursor_y
+      // 1. Create a final state with the cursor pushed to the very end of the text
+      // and the autocomplete menu explicitly closed.
+      let end_cursor = string.length(editor.buffer)
+      let updated = Editor(..editor, cursor: end_cursor, menu: None)
 
-      case lines_to_go_down > 0 {
-        True -> terminal.cursor_down(lines_to_go_down)
-        False -> Nil
-      }
+      // 2. Run the renderer one last time. This erases any floating menus 
+      // and places the terminal cursor safely at the very end of your code
+      // so we don't accidentally wipe the right side of your input!
+      render_editor(prompt, editor, updated)
 
-      terminal.clear_below()
+      // 3. Move to a fresh line for the evaluator's output
       terminal.println("")
       editor.buffer
     }
@@ -167,15 +205,54 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
     }
 
     ArrowUp -> {
-      let updated = Editor(..history_up(editor), menu: None)
-      render_editor(prompt, editor, updated)
-      loop(prompt, updated, completions)
+      let before_cursor = string.slice(editor.buffer, 0, editor.cursor)
+      let cursor_y = list.length(string.split(before_cursor, "\n")) - 1
+
+      case cursor_y == 0 {
+        // We are on the top line, go to history!
+        True -> {
+          let updated = Editor(..history_up(editor), menu: None)
+          render_editor(prompt, editor, updated)
+          loop(prompt, updated, completions)
+        }
+        // We are inside a multiline block, just move the cursor up!
+        False -> {
+          let updated =
+            Editor(
+              ..editor,
+              cursor: move_cursor_up(editor.buffer, editor.cursor),
+              menu: None,
+            )
+          render_editor(prompt, editor, updated)
+          loop(prompt, updated, completions)
+        }
+      }
     }
 
     ArrowDown -> {
-      let updated = Editor(..history_down(editor), menu: None)
-      render_editor(prompt, editor, updated)
-      loop(prompt, updated, completions)
+      let before_cursor = string.slice(editor.buffer, 0, editor.cursor)
+      let cursor_y = list.length(string.split(before_cursor, "\n")) - 1
+      let total_lines = list.length(string.split(editor.buffer, "\n")) - 1
+
+      case cursor_y == total_lines {
+        // We are on the bottom line, go to history!
+        True -> {
+          let updated = Editor(..history_down(editor), menu: None)
+          render_editor(prompt, editor, updated)
+          loop(prompt, updated, completions)
+        }
+        // We are inside a multiline block, just move the cursor down!
+        False -> {
+          let updated =
+            Editor(
+              ..editor,
+              cursor: move_cursor_down(editor.buffer, editor.cursor),
+              menu: None,
+            )
+          render_editor(prompt, editor, updated)
+          loop(prompt, updated, completions)
+        }
+      }
     }
 
     ArrowLeft -> {

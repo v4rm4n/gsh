@@ -11,6 +11,9 @@ import gleam/dynamic.{type Dynamic}
 import gleam/erlang/atom
 import gleam/erlang/process
 
+@external(erlang, "ffi", "system_time")
+pub fn system_time() -> Int
+
 /// Retrieves the Erlang/OTP and ERTS version string directly from the VM.
 /// Used to display the system information in the startup banner.
 @external(erlang, "ffi", "system_version")

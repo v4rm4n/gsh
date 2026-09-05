@@ -20,9 +20,10 @@ import gsh/evaluator/binding.{type Binding, Binding, Let, LetAssert}
 import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation}
 import gsh/evaluator/runner.{run}
 import gsh/evaluator/source
+import gsh/runtime/runtime
 import simplifile
 
-const evaluator_path = "test/gsh_eval.gleam"
+// const evaluator_path = "test/gsh_eval.gleam"
 
 /// The main entry point for code evaluation.
 /// 1. Analyzes the input to determine if it is an import, type, function, binding, or expression.
@@ -36,6 +37,10 @@ pub fn evaluate(
   types: List(String),
   functions: List(String),
 ) -> Evaluation {
+  // Generate a unique module name for this specific evaluation!
+  let module_name = "gsh_eval_" <> int.to_string(runtime.system_time())
+  let evaluator_path = "test/" <> module_name <> ".gleam"
+
   let input = string.trim(input)
 
   let is_import = string.starts_with(input, "import ")
@@ -89,7 +94,8 @@ pub fn evaluate(
 
   case simplifile.write(to: evaluator_path, contents: source) {
     Ok(_) -> {
-      let result = run(parsed_binding)
+      // Pass the dynamic module name to the runner!
+      let result = run(parsed_binding, module_name)
       let _ = simplifile.delete_all(paths: [evaluator_path])
 
       case is_import, is_type, is_function, result.success {
@@ -307,9 +313,13 @@ fn make_expression_source(
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  terminal.println(gsh_internal_formatter.format_output(gsh_internal_string.inspect("
+  // Put the expression on its own line so compiler errors look clean!
+  <> "  let gsh_internal_expr = {\n"
+  <> "    "
   <> expression
-  <> ")))\n"
+  <> "\n"
+  <> "  }\n"
+  <> "  terminal.println(gsh_internal_formatter.format_output(gsh_internal_string.inspect(gsh_internal_expr)))\n"
   <> "}\n"
 }
 
@@ -416,9 +426,12 @@ fn generate_cached_binding(binding: Binding, index: Int) -> String {
   <> cache_key
   <> "\")\n"
   <> "    False -> {\n"
-  <> "      let gsh_internal_val = "
+  // Isolate the value on its own line!
+  <> "      let gsh_internal_val = {\n"
+  <> "        "
   <> binding.value
   <> "\n"
+  <> "      }\n"
   <> "      gsh_store.put(\""
   <> cache_key
   <> "\", gsh_internal_val)\n"

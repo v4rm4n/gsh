@@ -47,7 +47,7 @@ pub fn build_project() -> Result(String, #(Int, String)) {
 /// 2. If compilation succeeds, it uses the `runtime` FFI to hot-load `gsh_eval.beam` 
 ///    into the current VM and executes the `gsh_entry` function.
 /// 3. Catches and formats any compiler or runtime errors into a safe `Evaluation` record.
-pub fn run(binding: Option(Binding)) -> Evaluation {
+pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
   // 1. Trigger compile-only step (creates/updates .beam files without running a new VM)
   case
     shellout.command(
@@ -70,7 +70,7 @@ pub fn run(binding: Option(Binding)) -> Evaluation {
 
     Ok(_) -> {
       // 2. Dynamically load and run the freshly compiled entrypoint!
-      case runtime.load_and_run("gsh_eval", "gsh_entry") {
+      case runtime.load_and_run(module_name, "gsh_entry") {
         Ok(_) ->
           Evaluation(
             output: "",

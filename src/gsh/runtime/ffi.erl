@@ -1,6 +1,7 @@
 -module(ffi).
 
 -export([
+    system_time/0,
     system_version/0,
     app_version/1,
     get_exports/1,
@@ -12,6 +13,11 @@
     boot_app/1,
     pid_from_string/1
 ]).
+
+%% Returns the current system time in microseconds to guarantee 
+%% unique file names for the REPL evaluator.
+system_time() ->
+    erlang:system_time(microsecond).
 
 system_version() ->
     unicode:characters_to_binary(erlang:system_info(system_version)).
