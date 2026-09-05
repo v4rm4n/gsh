@@ -307,9 +307,9 @@ fn make_expression_source(
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  terminal.println(gsh_internal_string.inspect("
+  <> "  terminal.println(gsh_internal_formatter.format_output(gsh_internal_string.inspect("
   <> expression
-  <> "))\n"
+  <> ")))\n"
   <> "}\n"
 }
 

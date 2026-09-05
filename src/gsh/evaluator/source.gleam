@@ -14,6 +14,7 @@
 /// collisions in case the user also decides to type `import gleam/string` in the REPL.
 pub fn header(with_string: Bool) -> String {
   "import gsh/input/terminal\n"
+  <> "import gsh/evaluator/formatter as gsh_internal_formatter\n"
   <> case with_string {
     True -> "import gleam/string as gsh_internal_string\n"
     False -> ""

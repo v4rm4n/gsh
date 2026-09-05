@@ -23,8 +23,6 @@ pub fn format_output(output: String) -> String {
   |> string.join(with: "\n")
   |> string.trim()
   |> contour.to_ansi()
-  // <-- Add contour here!
-  |> fn(highlighted) { highlighted <> "\n" }
 }
 
 /// Processes the output of a failed code evaluation (compiler error or runtime crash).
