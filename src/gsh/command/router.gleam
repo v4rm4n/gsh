@@ -7,6 +7,7 @@
 
 // src/gsh/command/router.gleam
 
+import gleam/string
 import gsh/command/bindings
 import gsh/command/help
 import gsh/command/history
@@ -27,6 +28,8 @@ pub type CommandResult {
   /// The user requested to recompile the surrounding Mix/Gleam project.
   Compile
 
+  Help(String)
+
   /// The input did not match any built-in commands and should be sent 
   /// to the standard Gleam evaluator.
   NotCommand
@@ -42,7 +45,9 @@ pub fn handle(
   bindings: List(Binding),
   history_entries: List(String),
 ) -> CommandResult {
-  case input {
+  let trimmed = string.trim(input)
+
+  case trimmed {
     "h()" -> {
       help.show()
       Handled
@@ -70,6 +75,15 @@ pub fn handle(
       Handled
     }
 
-    _ -> NotCommand
+    _ -> {
+      // Check for dynamic prefix commands!
+      case string.starts_with(trimmed, "h ") {
+        True -> {
+          let target = string.replace(trimmed, "h ", "") |> string.trim()
+          Help(target)
+        }
+        False -> NotCommand
+      }
+    }
   }
 }

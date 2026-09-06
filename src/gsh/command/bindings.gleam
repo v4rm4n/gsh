@@ -8,7 +8,6 @@
 
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
 import gsh/evaluator/binding.{type Binding}
 import gsh/input/terminal
 
@@ -32,12 +31,12 @@ pub fn show(bindings: List(Binding)) -> Nil {
 }
 
 /// Helper function to determine the printable name of a binding.
-/// If a standard variable name is available (e.g., `let x = 1`), it uses that.
-/// If the binding was a complex pattern match (e.g., destructuring), it falls 
-/// back to printing the raw pattern string.
+/// If exactly one variable is bound (e.g., `let x = 1` or `let Ok(val) = ...`), it uses that.
+/// If it's a complex pattern matching multiple variables (e.g., `let #(a, b) = ...`), 
+/// it falls back to printing the raw pattern string.
 fn display_name(binding: Binding) -> String {
-  case binding.name {
-    Some(name) -> name
-    None -> binding.pattern
+  case binding.names {
+    [name] -> name
+    _ -> binding.pattern
   }
 }

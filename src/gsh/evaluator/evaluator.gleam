@@ -85,13 +85,14 @@ pub fn evaluate(
       )
     }
     _ -> {
-      // 1. Filter out comments so we only route based on actual code
+      // 1. Filter out comments AND spaces so we only route based on actual syntax
       let tokens =
         list.filter(raw_tokens, fn(t) {
           case t {
             token.CommentNormal(_)
             | token.CommentDoc(_)
-            | token.CommentModule(_) -> False
+            | token.CommentModule(_)
+            | token.Space(_) -> False
             _ -> True
           }
         })
@@ -118,6 +119,11 @@ pub fn evaluate(
       // 3. Extract the binding if it is one
       let parsed_binding = case is_binding {
         True -> parse_binding(input, tokens)
+        False -> None
+      }
+
+      let parsed_def_name = case is_type || is_function {
+        True -> extract_def_name(tokens)
         False -> None
       }
 
@@ -172,9 +178,17 @@ pub fn evaluate(
             True, _, _, True ->
               Evaluation(..result, new_import: Some(input), output: "")
             _, True, _, True ->
-              Evaluation(..result, new_type: Some(input), output: "")
+              Evaluation(
+                ..result,
+                new_type: option.map(parsed_def_name, fn(n) { #(n, input) }),
+                output: "",
+              )
             _, _, True, True ->
-              Evaluation(..result, new_function: Some(input), output: "")
+              Evaluation(
+                ..result,
+                new_function: option.map(parsed_def_name, fn(n) { #(n, input) }),
+                output: "",
+              )
             _, _, _, _ -> result
           }
         }
@@ -231,7 +245,7 @@ fn parse_binding(source: String, tokens: List(token.Token)) -> Option(Binding) {
     _ -> #(Let, string.remove_prefix(from: source, matching: "let "))
   }
 
-  let reference = extract_name_from_tokens(tokens)
+  let references = extract_names_from_tokens(tokens, [])
 
   case string.split_once(without_let, on: "=") {
     Ok(#(pattern, value)) -> {
@@ -239,7 +253,8 @@ fn parse_binding(source: String, tokens: List(token.Token)) -> Option(Binding) {
         kind: kind,
         source: source,
         pattern: string.trim(pattern),
-        name: reference,
+        names: references,
+        // Now passing the List
         value: string.trim(value),
       ))
     }
@@ -247,13 +262,19 @@ fn parse_binding(source: String, tokens: List(token.Token)) -> Option(Binding) {
   }
 }
 
-/// Attempts to extract a simple variable name from a pattern.
-/// If the pattern is complex destructuring (like `[a, b]`), it returns `None`.
-fn extract_name_from_tokens(tokens: List(token.Token)) -> Option(String) {
+/// Scans the left side of an assignment to extract ALL bound variable names.
+fn extract_names_from_tokens(
+  tokens: List(token.Token),
+  acc: List(String),
+) -> List(String) {
   case tokens {
-    [] | [token.Equal, ..] -> None
-    [token.Name(name), ..] -> Some(name)
-    [_, ..rest] -> extract_name_from_tokens(rest)
+    [] | [token.Equal, ..] -> list.reverse(acc)
+
+    // Grab lowercase variable names!
+    [token.Name(name), ..rest] -> extract_names_from_tokens(rest, [name, ..acc])
+
+    // Ignore everything else
+    [_, ..rest] -> extract_names_from_tokens(rest, acc)
   }
 }
 
@@ -388,8 +409,8 @@ fn make_normal_binding_source(
   functions: List(String),
 ) -> String {
   let index = list.length(bindings)
-  case binding.name {
-    Some(name) ->
+  case binding.names {
+    [name] ->
       source.header(True)
       <> imports_source(imports)
       <> types_source(types)
@@ -402,7 +423,7 @@ fn make_normal_binding_source(
       <> "))\n"
       <> "}\n"
 
-    None ->
+    _ ->
       make_complex_binding_source(binding, bindings, imports, types, functions)
   }
 }
@@ -493,13 +514,24 @@ fn bindings_source_loop(bindings: List(Binding), index: Int) -> String {
   case bindings {
     [] -> ""
     [binding, ..rest] -> {
-      let mark_used = case binding.name {
-        Some(name) -> "  let _ = " <> name <> "\n"
-        None -> ""
-      }
+      let mark_used =
+        binding.names
+        |> list.map(fn(name) { "  let _ = " <> name <> "\n" })
+        |> string.join("")
+
       generate_cached_binding(binding, index)
       <> mark_used
       <> bindings_source_loop(rest, index + 1)
     }
+  }
+}
+
+fn extract_def_name(tokens: List(token.Token)) -> Option(String) {
+  case tokens {
+    [token.Pub, token.Fn, token.Name(name), ..] -> Some(name)
+    [token.Fn, token.Name(name), ..] -> Some(name)
+    [token.Pub, token.Type, token.UpperName(name), ..] -> Some(name)
+    [token.Type, token.UpperName(name), ..] -> Some(name)
+    _ -> None
   }
 }

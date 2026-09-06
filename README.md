@@ -7,6 +7,19 @@
 
 **⚠This is still a work in progress tool⚠**
 
+## Latest Bugfixes
+- **Robust Multiline Input & String Boundaries:** Replaced manual string-counting with a `glexer` powered token buffer. The shell now accurately detects open strings `(token.UnterminatedString)` and unclosed brackets, safely trapping them in the `...>` continuation prompt instead of crashing the compiler.
+
+- **Smart Variable Shadowing (Pruning):** Fixed a bug where redefining a variable as a function (e.g., `let a = 1` followed by `fn a() { ... }`) would cause a compiler type-mismatch. The REPL state now actively tracks the names of newly evaluated functions, types, and bindings, automatically purging older conflicting definitions from memory.
+
+- **Complex Pattern Destructuring (`let assert`):** Upgraded the token extractor to capture multiple variables from complex assignments. Statements like `let assert Ok(#(user_id, status)) = result` now correctly extract and cache both `user_id` and `status` into the shell's persistent memory, rather than stopping at the first token.
+
+- **Function Definition Recognition:** Fixed an issue where whitespace tokens (`token.Space`) caused the evaluator to miss function declarations. The token router now aggressively filters out whitespace and comments before analysis, ensuring reliable state updates for custom functions.
+
+- **Compiler Warning Suppression for Tuples:** Updated the background caching engine to dynamically generate `let _ = variable` statements for every variable extracted from a destructured list or tuple, preventing Gleam from throwing **"unused variable"** warnings behind the scenes.
+
+- **Standard Library Compatibility:** Replaced the deprecated `trim_left` string function with trim to ensure compatibility with recent Gleam standard library updates.
+
 ## Installation
 Add `gsh` to your project as a development dependency:
 
@@ -35,6 +48,8 @@ GSH includes several built-in commands to manage your session:
 - `history()` - Show the history of executed commands
 - `compile` - Recompile the host Gleam project without leaving the shell
 - `clear` - Clear the terminal screen (or Ctrl + L)
+- `pid()` - Create a pid from a string (e.g. pid("<0.34.0>"))
+- `h <module/function>` - Retrieve module/function documentation
 - `k()` - Exit the shell
 
 ## Target limitations
@@ -87,6 +102,10 @@ Gleam code -> Gleam compiler -> Erlang Target -> BEAM
 | **Multiline Input** | Yes (Buffer completion) | Yes (Native AST parsing) |
 | **Built-in Helpers** | `pid()` (easily extensible) | `h()`, `i()`, `v()`, `pid()`, etc. |
 | **Autocomplete** | Keywords, bound vars, module exports | Deeply context-aware + docstrings |
+
+## Elixir-Style Live Documentation (h command)
+
+While the Gleam compiler traditionally strips `///` comments during compilation (meaning compiled bytecode lacks documentation metadata), GSH bypasses this limitation entirely. By combining intelligent package path resolution with a live `glexer` token stream, the shell locates raw `.gleam` source files, lexes them on the fly, and extracts both module-level documentation and function signatures. This brings the legendary, tactile developer experience of Elixir's `iex` to Gleam, allowing developers to read rich, ANSI-formatted markdown documentation directly in the REPL without requiring modifications to the Gleam compiler.
 
 ## Acknowledgments
 GSH stands on the shoulders of some excellent Gleam libraries:

@@ -21,6 +21,7 @@ import gleam/option
 import gleam/string
 import gsh/command/router as command
 import gsh/evaluator/binding
+import gsh/evaluator/docs
 import gsh/evaluator/evaluator
 import gsh/evaluator/runner
 import gsh/input/buffer
@@ -36,9 +37,9 @@ pub type ShellState {
     prompt_count: Int,
     bindings: List(binding.Binding),
     imports: List(String),
-    types: List(String),
+    types: List(#(String, String)),
     history: List(String),
-    functions: List(String),
+    functions: List(#(String, String)),
   )
 }
 
@@ -183,6 +184,46 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       ))
     }
 
+    command.Help(target) -> {
+      // 1. Exit raw mode so multi-line text formats perfectly
+      let assert Ok(_) = tty.exit_raw()
+
+      // 2. Check if they asked for a function (`list.map`) or a module (`list`)
+      let is_function = string.contains(target, ".")
+
+      let output = case is_function {
+        True -> {
+          // Safely split "list.map" into "list" and "map"
+          case string.split_once(target, ".") {
+            Ok(#(mod_alias, func)) -> {
+              let full_mod = resolve_alias(mod_alias, state.imports)
+              docs.get_function_help(full_mod, func)
+            }
+            Error(_) -> "error: Invalid help target"
+          }
+        }
+        False -> {
+          let full_mod = resolve_alias(target, state.imports)
+          docs.get_module_help(full_mod)
+        }
+      }
+
+      // 3. Print the scraped docs
+      terminal.println(output)
+
+      // 4. Re-enter raw mode and restart the shell loop
+      let assert Ok(_) = tty.enter_raw()
+
+      shell_loop(ShellState(
+        state.prompt_count + 1,
+        state.bindings,
+        state.imports,
+        state.types,
+        history,
+        state.functions,
+      ))
+    }
+
     command.NotCommand -> {
       let is_duplicate_import =
         string.starts_with(input, "import ")
@@ -206,14 +247,17 @@ fn handle_input(input: String, state: ShellState) -> Nil {
           // Exit raw mode so side effects print normally!
           let assert Ok(_) = tty.exit_raw()
 
-          // Pass state.types into the evaluator
+          // Pass only the source strings into the evaluator
+          let type_sources = list.map(state.types, fn(t) { t.1 })
+          let function_sources = list.map(state.functions, fn(f) { f.1 })
+
           let result =
             evaluator.evaluate(
               input,
               state.bindings,
               state.imports,
-              state.types,
-              state.functions,
+              type_sources,
+              function_sources,
             )
 
           // Print evaluator output while still in normal mode
@@ -222,26 +266,56 @@ fn handle_input(input: String, state: ShellState) -> Nil {
           // Re-enter raw mode for the next REPL prompt
           let assert Ok(_) = tty.enter_raw()
 
+          // Identify all names just created (variables or functions)
+          let defined_names = case result.new_binding {
+            option.Some(b) -> b.names
+            option.None ->
+              case result.new_function {
+                option.Some(f) -> [f.0]
+                option.None -> []
+              }
+          }
+
+          // Prune old bindings if any of their names were overwritten
+          let base_bindings = case defined_names {
+            [] -> state.bindings
+            _ ->
+              list.filter(state.bindings, fn(b) {
+                !list.any(b.names, fn(n) { list.contains(defined_names, n) })
+              })
+          }
           let bindings = case result.new_binding {
-            option.Some(binding) -> list.append(state.bindings, [binding])
-            option.None -> state.bindings
+            option.Some(binding) -> list.append(base_bindings, [binding])
+            option.None -> base_bindings
+          }
+
+          // Prune old functions if their name was overwritten
+          let base_functions = case defined_names {
+            [] -> state.functions
+            _ ->
+              list.filter(state.functions, fn(f) {
+                !list.contains(defined_names, f.0)
+              })
+          }
+          let functions = case result.new_function {
+            option.Some(f) -> list.append(base_functions, [f])
+            option.None -> base_functions
+          }
+
+          // Prune old types
+          let base_types = case result.new_type {
+            option.Some(new_t) ->
+              list.filter(state.types, fn(t) { t.0 != new_t.0 })
+            option.None -> state.types
+          }
+          let types = case result.new_type {
+            option.Some(t) -> list.append(base_types, [t])
+            option.None -> base_types
           }
 
           let imports = case result.new_import {
             option.Some(imp) -> list.append(state.imports, [imp])
             option.None -> state.imports
-          }
-
-          // Persist newly evaluated custom types
-          let types = case result.new_type {
-            option.Some(t) -> list.append(state.types, [t])
-            option.None -> state.types
-          }
-
-          // Persist newly evaluated custom functions
-          let functions = case result.new_function {
-            option.Some(f) -> list.append(state.functions, [f])
-            option.None -> state.functions
           }
 
           shell_loop(ShellState(
@@ -264,8 +338,9 @@ fn read_command(prompt: String, state: ShellState) -> String {
   let keywords = [
     "let", "assert", "import", "type", "fn", "case", "if", "True", "False",
   ]
-  let variables =
-    list.filter_map(state.bindings, fn(b) { option.to_result(b.name, Nil) })
+
+  // Use flat_map to get all variable names!
+  let variables = list.flat_map(state.bindings, fn(b) { b.names })
 
   let module_completions =
     list.flat_map(state.imports, fn(imp) {
@@ -320,5 +395,26 @@ fn read_lines(
     True -> combined
 
     False -> read_lines(prompt, history, combined, False, completions)
+  }
+}
+
+/// Resolves a module alias (e.g. `list`) to its full path (`gleam/list`) 
+/// based on the shell's active imports.
+fn resolve_alias(alias: String, imports: List(String)) -> String {
+  let matched =
+    list.find(imports, fn(imp) {
+      string.ends_with(imp, "/" <> alias) || string.ends_with(imp, " " <> alias)
+    })
+
+  case matched {
+    Ok(imp) -> {
+      let path = string.replace(imp, "import ", "") |> string.trim()
+      case string.split_once(path, on: " as ") {
+        Ok(#(real_path, _)) -> string.trim(real_path)
+        Error(_) -> path
+      }
+    }
+    // Fallback: If not imported, assume they typed the full path (e.g. `h gleam/list`)
+    Error(_) -> alias
   }
 }

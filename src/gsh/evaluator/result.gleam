@@ -24,9 +24,9 @@ pub type Evaluation {
     /// A new module import to save to state (e.g., `import gleam/list`).
     new_import: Option(String),
     /// A new custom type definition to save to state (e.g., `pub type User { User }`).
-    new_type: Option(String),
+    new_type: Option(#(String, String)),
     /// A new custom function definition to save to state.
-    new_function: Option(String),
+    new_function: Option(#(String, String)),
   )
 }
 
