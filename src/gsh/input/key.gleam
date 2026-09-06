@@ -38,6 +38,18 @@ pub type Key {
   /// The Ctrl+L chord, which is the standard Unix terminal shortcut for clearing the screen.
   CtrlL
 
+  /// The Home key (or Fn+Left), jumps to the start of the current line.
+  Home
+
+  /// The End key (or Fn+Right), jumps to the end of the current line.
+  End
+
+  /// Ctrl + Left Arrow, jumps backward by one word.
+  CtrlLeft
+
+  /// Ctrl + Right Arrow, jumps forward by one word.
+  CtrlRight
+
   /// Any unrecognized or unhandled control sequence (e.g., Page Up, Home, End).
   Unknown
 }

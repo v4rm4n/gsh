@@ -13,7 +13,7 @@ import gleam/erlang/process
 import gleam/option.{None, Some}
 import gsh/input/key.{
   type Key as GshKey, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace,
-  Character, CtrlL, Enter, Tab, Unknown,
+  Character, CtrlL, CtrlLeft, CtrlRight, End, Enter, Home, Tab, Unknown,
 }
 
 /// Polls the terminal for a keyboard event. 
@@ -49,10 +49,7 @@ fn map_etch_key(key_event: event.KeyEvent) -> GshKey {
   let is_ctrl = key_event.modifiers.control
 
   case key_event.code, is_ctrl {
-    // Standard raw mode sends Form Feed (\f) for Ctrl+L
     event.Char("\f"), _ -> CtrlL
-
-    // Modern enhanced terminals send 'l' + Control modifier
     event.Char("l"), True -> CtrlL
     event.Char("L"), True -> CtrlL
 
@@ -61,10 +58,19 @@ fn map_etch_key(key_event: event.KeyEvent) -> GshKey {
     event.Tab, _ -> Tab
     event.UpArrow, _ -> ArrowUp
     event.DownArrow, _ -> ArrowDown
-    event.LeftArrow, _ -> ArrowLeft
-    event.RightArrow, _ -> ArrowRight
 
-    // Only map standard characters if Ctrl is NOT pressed
+    // 1. Check for Ctrl modifiers BEFORE falling back to standard arrows
+    event.LeftArrow, True -> CtrlLeft
+    event.RightArrow, True -> CtrlRight
+
+    // 2. Standard arrows
+    event.LeftArrow, False -> ArrowLeft
+    event.RightArrow, False -> ArrowRight
+
+    // 3. Home and End keys
+    event.Home, _ -> Home
+    event.End, _ -> End
+
     event.Char(c), False -> Character(c)
     _, _ -> Unknown
   }

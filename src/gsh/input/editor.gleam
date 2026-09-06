@@ -14,8 +14,8 @@ import gleam/result
 import gleam/string
 import gsh/input/display
 import gsh/input/key.{
-  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character, CtrlL, Enter,
-  Tab,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character, CtrlL,
+  CtrlLeft, CtrlRight, End, Enter, Home, Tab,
 }
 import gsh/input/reader
 import gsh/input/terminal
@@ -315,6 +315,56 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
       }
     }
 
+    Home -> {
+      // Jump to the start of the current line
+      let before_cursor = string.slice(editor.buffer, 0, editor.cursor)
+      let current_line_len =
+        string.length(result.unwrap(
+          list.last(string.split(before_cursor, "\n")),
+          "",
+        ))
+      let new_cursor = int.max(0, editor.cursor - current_line_len)
+
+      let updated = Editor(..editor, cursor: new_cursor, menu: None)
+      render_editor(prompt, editor, updated)
+      loop(prompt, updated, completions)
+    }
+
+    End -> {
+      // Jump to the end of the current line
+      let after_cursor =
+        string.slice(
+          editor.buffer,
+          editor.cursor,
+          string.length(editor.buffer) - editor.cursor,
+        )
+      let remainder_len =
+        string.length(result.unwrap(
+          list.first(string.split(after_cursor, "\n")),
+          "",
+        ))
+      let new_cursor =
+        int.min(string.length(editor.buffer), editor.cursor + remainder_len)
+
+      let updated = Editor(..editor, cursor: new_cursor, menu: None)
+      render_editor(prompt, editor, updated)
+      loop(prompt, updated, completions)
+    }
+
+    CtrlLeft -> {
+      let new_cursor = scan_word_left(editor.buffer, editor.cursor)
+      let updated = Editor(..editor, cursor: new_cursor, menu: None)
+      render_editor(prompt, editor, updated)
+      loop(prompt, updated, completions)
+    }
+
+    CtrlRight -> {
+      let new_cursor = scan_word_right(editor.buffer, editor.cursor)
+      let updated = Editor(..editor, cursor: new_cursor, menu: None)
+      render_editor(prompt, editor, updated)
+      loop(prompt, updated, completions)
+    }
+
     Tab -> {
       let left_of_cursor = string.slice(editor.buffer, 0, editor.cursor)
       let word = get_current_word(left_of_cursor)
@@ -537,6 +587,59 @@ fn build_grid(
         True -> build_grid(rest, max_cols, col_width, 0, acc <> padded <> "\n")
         False -> build_grid(rest, max_cols, col_width, next_col, acc <> padded)
       }
+    }
+  }
+}
+
+/// Scans backwards to find the start of the previous word.
+fn scan_word_left(buffer: String, cursor: Int) -> Int {
+  case cursor <= 0 {
+    True -> 0
+    False -> {
+      let before = string.slice(buffer, 0, cursor)
+      let chars = list.reverse(string.to_graphemes(before))
+
+      // Skip any trailing spaces first
+      let without_spaces =
+        list.drop_while(chars, fn(c) { c == " " || c == "\n" })
+      // Count the characters of the actual word
+      let word_chars =
+        list.take_while(without_spaces, fn(c) { c != " " && c != "\n" })
+
+      let spaces_skipped = list.length(chars) - list.length(without_spaces)
+      let jump = case list.length(word_chars) {
+        0 -> spaces_skipped
+        len -> spaces_skipped + len
+      }
+
+      int.max(0, cursor - jump)
+    }
+  }
+}
+
+/// Scans forwards to find the end of the next word.
+fn scan_word_right(buffer: String, cursor: Int) -> Int {
+  let max_len = string.length(buffer)
+  case cursor >= max_len {
+    True -> max_len
+    False -> {
+      let after = string.slice(buffer, cursor, max_len - cursor)
+      let chars = string.to_graphemes(after)
+
+      // Skip any leading spaces first
+      let without_spaces =
+        list.drop_while(chars, fn(c) { c == " " || c == "\n" })
+      // Count the characters of the actual word
+      let word_chars =
+        list.take_while(without_spaces, fn(c) { c != " " && c != "\n" })
+
+      let spaces_skipped = list.length(chars) - list.length(without_spaces)
+      let jump = case list.length(word_chars) {
+        0 -> spaces_skipped
+        len -> spaces_skipped + len
+      }
+
+      int.min(max_len, cursor + jump)
     }
   }
 }
