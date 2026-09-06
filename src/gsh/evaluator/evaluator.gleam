@@ -417,7 +417,7 @@ fn make_normal_binding_source(
       <> functions_source(functions)
       <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
-      <> generate_cached_binding(binding, index)
+      <> generate_current_binding(binding, index)
       <> "  terminal.println(gsh_internal_string.inspect("
       <> name
       <> "))\n"
@@ -442,7 +442,7 @@ fn make_assert_source(
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> generate_cached_binding(binding, index)
+  <> generate_current_binding(binding, index)
   <> "  terminal.println(\"ok\")\n"
   <> "}\n"
 }
@@ -461,32 +461,53 @@ fn make_complex_binding_source(
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> generate_cached_binding(binding, index)
+  <> generate_current_binding(binding, index)
   <> "  terminal.println(\"ok\")\n"
   <> "}\n"
 }
 
-/// THE MAGIC CACHING WRAPPER
-/// 
-/// Instead of generating a raw `let x = some_expensive_function()`, this wrapper 
-/// injects code that first checks the Erlang Process Dictionary (`gsh_store`).
-/// If the value was evaluated in a previous prompt, it pulls it directly from memory. 
-/// If it's a new binding, it evaluates it once, stores it in memory, and returns it.
-fn generate_cached_binding(binding: Binding, index: Int) -> String {
-  let cache_key = "gsh_bind_" <> int.to_string(index)
-  let keyword = case binding.kind {
-    Let -> "let "
-    LetAssert -> "let assert "
+/// Builds a capture syntax for the bound variables (e.g., `x` or `#(a, b)`).
+fn build_capture_group(names: List(String)) -> String {
+  case names {
+    [] -> "Nil"
+    [name] -> name
+    _ -> "#(" <> string.join(names, ", ") <> ")"
   }
+}
+
+/// CURRENT BINDING: Generates exact raw code for pristine compiler errors, 
+/// then manually pushes the resulting variables into the cache.
+fn generate_current_binding(binding: Binding, index: Int) -> String {
+  let cache_key = "gsh_bind_" <> int.to_string(index)
+  let capture = build_capture_group(binding.names)
 
   "  "
-  <> keyword
-  <> binding.pattern
+  <> binding.source
+  <> "\n"
+  <> "  let _ = gsh_store.put(\""
+  <> cache_key
+  <> "\", "
+  <> capture
+  <> ")\n"
+}
+
+/// HISTORICAL BINDING: Safely restores previous variables from the cache. 
+/// It places the original user source inside an unexecuted closure to guarantee 
+/// the Gleam compiler can accurately infer the types of the restored variables.
+fn generate_historical_binding(binding: Binding, index: Int) -> String {
+  let cache_key = "gsh_bind_" <> int.to_string(index)
+  let capture = build_capture_group(binding.names)
+
+  "  let "
+  <> capture
   <> " = gsh_store.cache(\""
   <> cache_key
   <> "\", fn() {\n"
   <> "    "
-  <> binding.value
+  <> binding.source
+  <> "\n"
+  <> "    "
+  <> capture
   <> "\n"
   <> "  })\n"
 }
@@ -507,7 +528,7 @@ fn bindings_source_loop(bindings: List(Binding), index: Int) -> String {
         |> list.map(fn(name) { "  let _ = " <> name <> "\n" })
         |> string.join("")
 
-      generate_cached_binding(binding, index)
+      generate_historical_binding(binding, index)
       <> mark_used
       <> bindings_source_loop(rest, index + 1)
     }
