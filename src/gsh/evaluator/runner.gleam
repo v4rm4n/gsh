@@ -41,22 +41,14 @@ pub fn build_project() -> Result(String, #(Int, String)) {
 }
 
 /// The core execution pipeline for evaluated code.
-/// 
-/// 1. Uses `shellout` to run `gleam build --target erlang`. This compiles the 
-///    temporary `gsh_eval.gleam` file into a `.beam` file without booting a new VM.
-/// 2. If compilation succeeds, it uses the `runtime` FFI to hot-load `gsh_eval.beam` 
-///    into the current VM and executes the `gsh_entry` function.
-/// 3. Catches and formats any compiler or runtime errors into a safe `Evaluation` record.
 pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
-  // 1. Trigger compile-only step (creates/updates .beam files without running a new VM)
-  case
-    shellout.command(
-      run: "gleam",
-      with: ["build", "--target", "erlang"],
-      in: ".",
-      opt: [],
-    )
-  {
+  // 1. Fast-path Gleam compilation straight to .erl source (skips full build graph & .beam disk writes)
+  let args = [
+    "compile-package", "--target", "erlang", "--package", ".", "--out",
+    "build/dev/erlang/gsh", "--lib", "build/dev/erlang", "--no-beam",
+  ]
+
+  case shellout.command(run: "gleam", with: args, in: ".", opt: []) {
     Error(#(_status, output)) ->
       Evaluation(
         output: formatter.format_error(output),
@@ -69,26 +61,45 @@ pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
       )
 
     Ok(_) -> {
-      // 2. Dynamically load and run the freshly compiled entrypoint!
-      case runtime.load_and_run(module_name, "gsh_entry") {
-        Ok(_) ->
-          Evaluation(
-            output: "",
-            success: True,
-            error_kind: NoError,
-            new_binding: persist_binding(binding),
-            new_import: None,
-            new_type: None,
-            new_function: None,
-          )
+      // 2. Compile the generated .erl file directly into RAM via Erlang's compile:file
+      let erl_path =
+        "build/dev/erlang/gsh/_gleam_artefacts/" <> module_name <> ".erl"
+
+      case runtime.compile_and_load(erl_path, module_name) {
+        Ok(_) -> {
+          // 3. Execute entrypoint in memory
+          case runtime.run_entry(module_name, "gsh_entry") {
+            Ok(_) ->
+              Evaluation(
+                output: "",
+                success: True,
+                error_kind: NoError,
+                new_binding: persist_binding(binding),
+                new_import: None,
+                new_type: None,
+                new_function: None,
+              )
+
+            Error(err) ->
+              Evaluation(
+                output: "Runtime Error: "
+                  <> formatter.format_error(string.inspect(err))
+                  <> "\n",
+                success: False,
+                error_kind: RuntimeError,
+                new_binding: None,
+                new_import: None,
+                new_type: None,
+                new_function: None,
+              )
+          }
+        }
 
         Error(err) ->
           Evaluation(
-            output: "Runtime Error: "
-              <> formatter.format_error(string.inspect(err))
-              <> "\n",
+            output: "Erlang RAM Compilation Error: " <> err <> "\n",
             success: False,
-            error_kind: RuntimeError,
+            error_kind: CompileError,
             new_binding: None,
             new_import: None,
             new_type: None,

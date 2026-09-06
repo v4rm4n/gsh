@@ -12,9 +12,13 @@
 /// can print results. If `with_string` is True, it also imports `gleam/string` 
 /// under a hidden alias (`gsh_internal_string`). The alias prevents namespace 
 /// collisions in case the user also decides to type `import gleam/string` in the REPL.
-pub fn header(with_string: Bool) -> String {
+/// Generates the standard module header and base imports for the evaluation file.
+pub fn header(with_string: Bool, with_formatter: Bool) -> String {
   "import gsh/input/terminal\n"
-  <> "import gsh/evaluator/formatter as gsh_internal_formatter\n"
+  <> case with_formatter {
+    True -> "import gsh/evaluator/formatter as gsh_internal_formatter\n"
+    False -> ""
+  }
   <> case with_string {
     True -> "import gleam/string as gsh_internal_string\n"
     False -> ""

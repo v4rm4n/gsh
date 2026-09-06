@@ -20,7 +20,7 @@ import glexer
 import glexer/token
 import gsh/evaluator/binding.{type Binding, Binding, Let, LetAssert}
 import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation}
-import gsh/evaluator/runner.{run}
+import gsh/evaluator/runner
 import gsh/evaluator/source
 import gsh/runtime/runtime
 import simplifile
@@ -38,10 +38,10 @@ pub fn evaluate(
   imports: List(String),
   types: List(String),
   functions: List(String),
+  debug: Bool,
 ) -> Evaluation {
-  // Generate a unique module name for this specific evaluation!
-  let module_name = "gsh_eval_" <> int.to_string(runtime.system_time())
-  let evaluator_path = "test/" <> module_name <> ".gleam"
+  let module_name = "gsh_eval"
+  let evaluator_path = "test/gsh_eval.gleam"
 
   let input = string.trim(input)
 
@@ -170,11 +170,31 @@ pub fn evaluate(
 
       case simplifile.write(to: evaluator_path, contents: source) {
         Ok(_) -> {
-          // Pass the dynamic module name to the runner!
-          let result = run(parsed_binding, module_name)
-          let _ = simplifile.delete_all(paths: [evaluator_path])
+          let start_time = runtime.system_time()
+          let result = runner.run(parsed_binding, module_name)
+          let elapsed_us = runtime.system_time() - start_time
 
-          case is_import, is_type, is_function, result.success {
+          // Delete immediately so test/gsh_eval.gleam never persists on disk!
+          let _ = simplifile.delete_all(["test/gsh_eval.gleam"])
+
+          let debug_output = case debug {
+            True -> {
+              let ms = int.to_string(elapsed_us / 1000)
+              let us = int.to_string(elapsed_us % 1000)
+              "\u{001b}[90m[debug] latency: "
+              <> ms
+              <> "."
+              <> us
+              <> "ms | bindings: "
+              <> int.to_string(list.length(bindings))
+              <> " | imports: "
+              <> int.to_string(list.length(imports))
+              <> "\u{001b}[0m\n"
+            }
+            False -> ""
+          }
+
+          let eval = case is_import, is_type, is_function, result.success {
             True, _, _, True ->
               Evaluation(..result, new_import: Some(input), output: "")
             _, True, _, True ->
@@ -191,11 +211,13 @@ pub fn evaluate(
               )
             _, _, _, _ -> result
           }
+
+          Evaluation(..eval, output: debug_output <> eval.output)
         }
 
         Error(_) ->
           Evaluation(
-            output: "GSH could not create the evaluator module.\n",
+            output: "GSH could not write evaluator file.\n",
             success: False,
             error_kind: CompileError,
             new_binding: None,
@@ -222,7 +244,7 @@ fn make_function_source(
     False -> "pub " <> new_fn
   }
 
-  source.header(False)
+  source.header(False, False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
@@ -330,7 +352,7 @@ fn make_type_source(
     False -> "pub " <> new_type
   }
 
-  source.header(False)
+  source.header(False, False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
@@ -349,7 +371,7 @@ fn make_import_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  source.header(False)
+  source.header(False, False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
@@ -370,13 +392,12 @@ fn make_expression_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  source.header(True)
+  source.header(True, True)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  // Put the expression on its own line so compiler errors look clean!
   <> "  let gsh_internal_expr = {\n"
   <> "    "
   <> expression
@@ -411,7 +432,7 @@ fn make_normal_binding_source(
   let index = list.length(bindings)
   case binding.names {
     [name] ->
-      source.header(True)
+      source.header(True, False)
       <> imports_source(imports)
       <> types_source(types)
       <> functions_source(functions)
@@ -428,7 +449,7 @@ fn make_normal_binding_source(
   }
 }
 
-fn make_assert_source(
+fn make_complex_binding_source(
   binding: Binding,
   bindings: List(Binding),
   imports: List(String),
@@ -436,7 +457,7 @@ fn make_assert_source(
   functions: List(String),
 ) -> String {
   let index = list.length(bindings)
-  source.header(False)
+  source.header(False, False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
@@ -447,7 +468,7 @@ fn make_assert_source(
   <> "}\n"
 }
 
-fn make_complex_binding_source(
+fn make_assert_source(
   binding: Binding,
   bindings: List(Binding),
   imports: List(String),
@@ -455,7 +476,7 @@ fn make_complex_binding_source(
   functions: List(String),
 ) -> String {
   let index = list.length(bindings)
-  source.header(True)
+  source.header(False, False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)

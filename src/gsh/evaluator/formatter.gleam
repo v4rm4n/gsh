@@ -39,31 +39,12 @@ pub fn format_error(output: String) -> String {
 }
 
 /// Scans error output for references to the internal evaluator file (`gsh_eval.gleam`).
-/// When the Gleam compiler prints an error snippet, it draws a UI box with the path.
-/// This function swaps that absolute path out for `┌─ REPL` to maintain the illusion 
-/// that the code was executed directly in memory.
+/// Replaces relative disk paths with "REPL" to keep the terminal output pristine.
 fn hide_internal_path(output: String) -> String {
   output
-  |> string.split("\n")
-  |> list.map(fn(line) {
-    // Look for the prefix instead of the exact file name
-    case string.split_once(line, on: "gsh_eval_") {
-      Ok(#(before, after)) -> {
-        case string.split_once(before, on: "┌─ ") {
-          Ok(#(padding, _path)) -> {
-            // Strip out the timestamp and .gleam extension to keep it clean
-            case string.split_once(after, on: ".gleam") {
-              Ok(#(_, rest)) -> padding <> "┌─ REPL" <> rest
-              Error(_) -> line
-            }
-          }
-          Error(_) -> line
-        }
-      }
-      Error(_) -> line
-    }
-  })
-  |> string.join("\n")
+  |> string.replace(each: "./test/gsh_eval.gleam", with: "REPL")
+  |> string.replace(each: "test/gsh_eval.gleam", with: "REPL")
+  |> string.replace(each: "gsh_eval.gleam", with: "REPL")
 }
 
 /// A recursive state-machine filter that removes multi-line compiler warnings.

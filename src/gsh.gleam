@@ -28,6 +28,7 @@ import gsh/input/buffer
 import gsh/input/editor
 import gsh/input/terminal
 import gsh/runtime/runtime.{app_version, system_version}
+import simplifile
 
 /// Holds the persistent state of the shell session across evaluations.
 /// This state is passed recursively through the REPL loop to maintain history, 
@@ -40,6 +41,7 @@ pub type ShellState {
     types: List(#(String, String)),
     history: List(String),
     functions: List(#(String, String)),
+    debug: Bool,
   )
 }
 
@@ -49,6 +51,8 @@ pub type ShellState {
 /// 2. Places the terminal into raw mode for character-by-character input processing.
 /// 3. Starts the recursive REPL loop.
 pub fn main() -> Nil {
+  let _ = simplifile.delete_all(["test/gsh_eval.gleam"])
+
   // 1. Intercept ALL CLI arguments and boot them
   let args = runtime.get_args()
 
@@ -90,7 +94,7 @@ pub fn main() -> Nil {
   banner()
 
   // Initialized with empty lists
-  shell_loop(ShellState(1, [], [], [], [], []))
+  shell_loop(ShellState(1, [], [], [], [], [], False))
 
   let assert Ok(_) = tty.exit_raw()
 
@@ -123,6 +127,7 @@ fn shell_loop(state: ShellState) -> Nil {
         state.types,
         state.history,
         state.functions,
+        state.debug,
       ))
 
     _ -> handle_input(input, state)
@@ -146,6 +151,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.types,
         history,
         state.functions,
+        state.debug,
       ))
 
     command.Exit -> {
@@ -163,6 +169,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.types,
         history,
         state.functions,
+        state.debug,
       ))
     }
 
@@ -188,6 +195,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.types,
         history,
         state.functions,
+        state.debug,
       ))
     }
 
@@ -228,6 +236,26 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         state.types,
         history,
         state.functions,
+        state.debug,
+      ))
+    }
+
+    command.ToggleDebug -> {
+      let new_debug = !state.debug
+      let status = case new_debug {
+        True -> "enabled"
+        False -> "disabled"
+      }
+      terminal.println("Debug mode " <> status)
+
+      shell_loop(ShellState(
+        state.prompt_count + 1,
+        state.bindings,
+        state.imports,
+        state.types,
+        history,
+        state.functions,
+        new_debug,
       ))
     }
 
@@ -247,6 +275,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             state.types,
             history,
             state.functions,
+            state.debug,
           ))
         }
 
@@ -265,6 +294,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               state.imports,
               type_sources,
               function_sources,
+              state.debug,
             )
 
           // Print evaluator output while still in normal mode
@@ -332,6 +362,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             types,
             history,
             functions,
+            state.debug,
           ))
         }
       }

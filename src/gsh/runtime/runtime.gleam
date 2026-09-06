@@ -71,3 +71,14 @@ pub fn pid_from_string(pid: String) -> process.Pid
 
 @external(erlang, "ffi", "fix_logger_staircase")
 pub fn fix_logger_staircase() -> Nil
+
+@external(erlang, "ffi", "compile_and_load")
+pub fn compile_and_load(
+  erl_path: String,
+  module_name: String,
+) -> Result(Nil, String)
+
+/// Executes an already-loaded entrypoint function safely in memory, 
+/// catching any Erlang runtime exceptions (e.g. pattern match failures, crashes).
+@external(erlang, "ffi", "run_entry")
+pub fn run_entry(module: String, function: String) -> Result(Dynamic, Dynamic)

@@ -28,6 +28,8 @@ pub type CommandResult {
   /// The user requested to recompile the surrounding Mix/Gleam project.
   Compile
 
+  ToggleDebug
+
   Help(String)
 
   /// The input did not match any built-in commands and should be sent 
@@ -48,6 +50,8 @@ pub fn handle(
   let trimmed = string.trim(input)
 
   case trimmed {
+    ":debug" | "debug" | "debug()" -> ToggleDebug
+
     "h()" -> {
       help.show()
       Handled
