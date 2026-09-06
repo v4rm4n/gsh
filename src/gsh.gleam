@@ -295,6 +295,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               type_sources,
               function_sources,
               state.debug,
+              state.prompt_count,
             )
 
           // Print evaluator output while still in normal mode
@@ -313,12 +314,14 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               }
           }
 
-          // Prune old bindings if any of their names were overwritten
+          // Only prune an old binding if ALL of its names were overwritten!
+          // This safely preserves partially shadowed bindings like tuples or records.
           let base_bindings = case defined_names {
             [] -> state.bindings
             _ ->
               list.filter(state.bindings, fn(b) {
-                !list.any(b.names, fn(n) { list.contains(defined_names, n) })
+                // Keep the binding if at least one of its variables is STILL valid
+                list.any(b.names, fn(n) { !list.contains(defined_names, n) })
               })
           }
           let bindings = case result.new_binding {

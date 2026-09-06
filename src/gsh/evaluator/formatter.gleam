@@ -38,13 +38,30 @@ pub fn format_error(output: String) -> String {
   <> "\n"
 }
 
-/// Scans error output for references to the internal evaluator file (`gsh_eval.gleam`).
+/// Scans error output for references to the internal evaluator file (`gsh_eval_X.gleam`).
 /// Replaces relative disk paths with "REPL" to keep the terminal output pristine.
 fn hide_internal_path(output: String) -> String {
   output
-  |> string.replace(each: "./test/gsh_eval.gleam", with: "REPL")
-  |> string.replace(each: "test/gsh_eval.gleam", with: "REPL")
-  |> string.replace(each: "gsh_eval.gleam", with: "REPL")
+  |> string.split("\n")
+  |> list.map(fn(line) {
+    case string.split_once(line, on: "gsh_eval_") {
+      Ok(#(before, after)) -> {
+        // Strip out the "./test/" directory prefix
+        case string.split_once(before, on: "┌─ ") {
+          Ok(#(padding, _path_prefix)) -> {
+            // Strip out the dynamic prompt ID and extension
+            case string.split_once(after, on: ".gleam") {
+              Ok(#(_id, rest)) -> padding <> "┌─ REPL" <> rest
+              Error(_) -> line
+            }
+          }
+          Error(_) -> line
+        }
+      }
+      Error(_) -> line
+    }
+  })
+  |> string.join("\n")
 }
 
 /// A recursive state-machine filter that removes multi-line compiler warnings.

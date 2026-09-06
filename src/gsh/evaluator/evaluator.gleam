@@ -39,9 +39,10 @@ pub fn evaluate(
   types: List(String),
   functions: List(String),
   debug: Bool,
+  prompt_count: Int,
 ) -> Evaluation {
-  let module_name = "gsh_eval"
-  let evaluator_path = "test/gsh_eval.gleam"
+  let module_name = "gsh_eval_" <> int.to_string(prompt_count)
+  let evaluator_path = "test/" <> module_name <> ".gleam"
 
   let input = string.trim(input)
 
@@ -174,8 +175,8 @@ pub fn evaluate(
           let result = runner.run(parsed_binding, module_name)
           let elapsed_us = runtime.system_time() - start_time
 
-          // Delete immediately so test/gsh_eval.gleam never persists on disk!
-          let _ = simplifile.delete_all(["test/gsh_eval.gleam"])
+          // Delete the specific dynamic file!
+          let _ = simplifile.delete(evaluator_path)
 
           let debug_output = case debug {
             True -> {
