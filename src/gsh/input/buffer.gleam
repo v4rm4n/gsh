@@ -8,45 +8,47 @@
 // src/gsh/input/buffer.gleam
 
 import gleam/list
-import gleam/string
+import glexer
+import glexer/token
 
 /// Evaluates a string of Gleam source code to determine if it is structurally complete.
-/// It does this by verifying that all opened parentheses `()`, square brackets `[]`, 
-/// and curly braces `{}` have been properly closed.
+/// It uses the lexer to verify that no strings are left open, and all opened 
+/// parentheses `()`, square brackets `[]`, and curly braces `{}` have been properly closed.
 pub fn is_complete(input: String) -> Bool {
-  let braces = count_brackets(input)
+  let tokens =
+    glexer.new(input)
+    |> glexer.lex()
+    |> list.map(fn(t) { t.0 })
 
-  braces.paren == 0 && braces.square == 0 && braces.curly == 0
-}
+  // 1. If the lexer found an open string, we immediately know it's incomplete
+  let has_open_string =
+    list.any(tokens, fn(t) {
+      case t {
+        token.UnterminatedString(_) -> True
+        _ -> False
+      }
+    })
 
-/// Internal state tracker used while iterating through the input's graphemes.
-/// It keeps track of the current nesting depth of various bracket types, 
-/// as well as a boolean flag to track whether the parser is currently inside a string.
-type Brackets {
-  Brackets(paren: Int, square: Int, curly: Int, in_string: Bool)
-}
+  case has_open_string {
+    True -> False
+    False -> {
+      // 2. Count the brackets using pure syntax tokens. 
+      // Because we are using tokens, brackets inside strings or comments are naturally ignored!
+      let #(paren, square, curly) =
+        list.fold(tokens, #(0, 0, 0), fn(acc, t) {
+          case t {
+            token.LeftParen -> #(acc.0 + 1, acc.1, acc.2)
+            token.RightParen -> #(acc.0 - 1, acc.1, acc.2)
+            token.LeftSquare -> #(acc.0, acc.1 + 1, acc.2)
+            token.RightSquare -> #(acc.0, acc.1 - 1, acc.2)
+            token.LeftBrace -> #(acc.0, acc.1, acc.2 + 1)
+            token.RightBrace -> #(acc.0, acc.1, acc.2 - 1)
+            _ -> acc
+          }
+        })
 
-/// Performs a single-pass fold over the input string's graphemes to count brackets.
-/// Crucially, it tracks string literal boundaries (`"`) so that brackets typed 
-/// inside a string (e.g., `let a = "(hello["`) do not interfere with the overall 
-/// structural completion check.
-fn count_brackets(input: String) -> Brackets {
-  string.to_graphemes(input)
-  |> list.fold(Brackets(0, 0, 0, False), fn(acc, char) {
-    case char, acc.in_string {
-      // Toggle string state when we see an unescaped quote
-      "\"", in_str -> Brackets(..acc, in_string: !in_str)
-
-      // If we are inside a string, ignore all brackets!
-      _, True -> acc
-
-      "(", False -> Brackets(..acc, paren: acc.paren + 1)
-      ")", False -> Brackets(..acc, paren: acc.paren - 1)
-      "[", False -> Brackets(..acc, square: acc.square + 1)
-      "]", False -> Brackets(..acc, square: acc.square - 1)
-      "{", False -> Brackets(..acc, curly: acc.curly + 1)
-      "}", False -> Brackets(..acc, curly: acc.curly - 1)
-      _, _ -> acc
+      // If all bracket counts are 0 (or less), the statement is complete
+      paren <= 0 && square <= 0 && curly <= 0
     }
-  })
+  }
 }

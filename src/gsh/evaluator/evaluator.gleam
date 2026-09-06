@@ -16,6 +16,8 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
+import glexer
+import glexer/token
 import gsh/evaluator/binding.{type Binding, Binding, Let, LetAssert}
 import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation}
 import gsh/evaluator/runner.{run}
@@ -43,75 +45,37 @@ pub fn evaluate(
 
   let input = string.trim(input)
 
-  let is_import = string.starts_with(input, "import ")
-  let is_type =
-    string.starts_with(input, "type ") || string.starts_with(input, "pub type ")
-  let is_function =
-    string.starts_with(input, "fn ") || string.starts_with(input, "pub fn ")
+  // 1. Run the lexer and get ALL tokens (including comments and errors)
+  let raw_tokens =
+    glexer.new(input)
+    |> glexer.lex()
+    |> list.map(fn(tuple) { tuple.0 })
 
-  let parsed_binding = case is_import || is_type || is_function {
-    True -> None
-    False ->
-      case string.starts_with(input, "let ") {
-        True -> parse_binding(input)
-        False -> None
+  // 2. Check if the user left a string open or typed a bad character
+  let lex_error =
+    list.find(raw_tokens, fn(t) {
+      case t {
+        token.UnterminatedString(_) | token.UnexpectedGrapheme(_) -> True
+        _ -> False
       }
-  }
+    })
 
-  let source = case is_import {
-    True -> make_import_source(input, bindings, imports, types, functions)
-    False ->
-      case is_type {
-        True -> make_type_source(input, bindings, imports, types, functions)
-        False ->
-          case is_function {
-            True ->
-              make_function_source(input, bindings, imports, types, functions)
-            False ->
-              case parsed_binding {
-                Some(binding) ->
-                  make_binding_source(
-                    binding,
-                    bindings,
-                    imports,
-                    types,
-                    functions,
-                  )
-                None ->
-                  make_expression_source(
-                    input,
-                    bindings,
-                    imports,
-                    types,
-                    functions,
-                  )
-              }
-          }
-      }
-  }
-
-  let _ = simplifile.create_directory("test")
-
-  case simplifile.write(to: evaluator_path, contents: source) {
-    Ok(_) -> {
-      // Pass the dynamic module name to the runner!
-      let result = run(parsed_binding, module_name)
-      let _ = simplifile.delete_all(paths: [evaluator_path])
-
-      case is_import, is_type, is_function, result.success {
-        True, _, _, True ->
-          Evaluation(..result, new_import: Some(input), output: "")
-        _, True, _, True ->
-          Evaluation(..result, new_type: Some(input), output: "")
-        _, _, True, True ->
-          Evaluation(..result, new_function: Some(input), output: "")
-        _, _, _, _ -> result
-      }
-    }
-
-    Error(_) ->
+  case lex_error {
+    Ok(token.UnterminatedString(_)) -> {
       Evaluation(
-        output: "GSH could not create the evaluator module.\n",
+        output: "error: Syntax error\n  The string was left open.\n",
+        success: False,
+        error_kind: CompileError,
+        // Reverted from IncompleteInput
+        new_binding: None,
+        new_import: None,
+        new_type: None,
+        new_function: None,
+      )
+    }
+    Ok(token.UnexpectedGrapheme(g)) -> {
+      Evaluation(
+        output: "error: Syntax error\n  Unexpected grapheme: " <> g <> "\n",
         success: False,
         error_kind: CompileError,
         new_binding: None,
@@ -119,6 +83,114 @@ pub fn evaluate(
         new_type: None,
         new_function: None,
       )
+    }
+    _ -> {
+      // 1. Filter out comments so we only route based on actual code
+      let tokens =
+        list.filter(raw_tokens, fn(t) {
+          case t {
+            token.CommentNormal(_)
+            | token.CommentDoc(_)
+            | token.CommentModule(_) -> False
+            _ -> True
+          }
+        })
+
+      // 2. Token-based routing
+      let #(is_import, is_type, is_function, is_binding) = case tokens {
+        [token.Import, ..] -> #(True, False, False, False)
+        [token.Pub, token.Type, ..] | [token.Type, ..] -> #(
+          False,
+          True,
+          False,
+          False,
+        )
+        [token.Pub, token.Fn, ..] | [token.Fn, ..] -> #(
+          False,
+          False,
+          True,
+          False,
+        )
+        [token.Let, ..] -> #(False, False, False, True)
+        _ -> #(False, False, False, False)
+      }
+
+      // 3. Extract the binding if it is one
+      let parsed_binding = case is_binding {
+        True -> parse_binding(input, tokens)
+        False -> None
+      }
+
+      // 4. Generate the source
+      let source = case is_import {
+        True -> make_import_source(input, bindings, imports, types, functions)
+        False ->
+          case is_type {
+            True -> make_type_source(input, bindings, imports, types, functions)
+            False ->
+              case is_function {
+                True ->
+                  make_function_source(
+                    input,
+                    bindings,
+                    imports,
+                    types,
+                    functions,
+                  )
+                False ->
+                  case parsed_binding {
+                    Some(binding) ->
+                      make_binding_source(
+                        binding,
+                        bindings,
+                        imports,
+                        types,
+                        functions,
+                      )
+                    None ->
+                      make_expression_source(
+                        input,
+                        bindings,
+                        imports,
+                        types,
+                        functions,
+                      )
+                  }
+              }
+          }
+      }
+
+      let _ = simplifile.create_directory("test")
+
+      case simplifile.write(to: evaluator_path, contents: source) {
+        Ok(_) -> {
+          // Pass the dynamic module name to the runner!
+          let result = run(parsed_binding, module_name)
+          let _ = simplifile.delete_all(paths: [evaluator_path])
+
+          case is_import, is_type, is_function, result.success {
+            True, _, _, True ->
+              Evaluation(..result, new_import: Some(input), output: "")
+            _, True, _, True ->
+              Evaluation(..result, new_type: Some(input), output: "")
+            _, _, True, True ->
+              Evaluation(..result, new_function: Some(input), output: "")
+            _, _, _, _ -> result
+          }
+        }
+
+        Error(_) ->
+          Evaluation(
+            output: "GSH could not create the evaluator module.\n",
+            success: False,
+            error_kind: CompileError,
+            new_binding: None,
+            new_import: None,
+            new_type: None,
+            new_function: None,
+          )
+      }
+    }
   }
 }
 
@@ -150,26 +222,25 @@ fn make_function_source(
 
 /// Parses a string like `let x = 5` into a structured `Binding` record, 
 /// separating the left-hand pattern from the right-hand value.
-fn parse_binding(source: String) -> Option(Binding) {
-  let #(kind, without_let) = case string.starts_with(source, "let assert ") {
-    True -> #(
+fn parse_binding(source: String, tokens: List(token.Token)) -> Option(Binding) {
+  let #(kind, without_let) = case tokens {
+    [token.Let, token.Assert, ..] -> #(
       LetAssert,
       string.remove_prefix(from: source, matching: "let assert "),
     )
-    False -> #(Let, string.remove_prefix(from: source, matching: "let "))
+    _ -> #(Let, string.remove_prefix(from: source, matching: "let "))
   }
+
+  let reference = extract_name_from_tokens(tokens)
 
   case string.split_once(without_let, on: "=") {
     Ok(#(pattern, value)) -> {
-      let pattern = string.trim(pattern)
-      let value = string.trim(value)
-      let reference = extract_simple_reference(pattern)
       Some(Binding(
         kind: kind,
         source: source,
-        pattern: pattern,
+        pattern: string.trim(pattern),
         name: reference,
-        value: value,
+        value: string.trim(value),
       ))
     }
     Error(_) -> None
@@ -178,41 +249,12 @@ fn parse_binding(source: String) -> Option(Binding) {
 
 /// Attempts to extract a simple variable name from a pattern.
 /// If the pattern is complex destructuring (like `[a, b]`), it returns `None`.
-fn extract_simple_reference(pattern: String) -> Option(String) {
-  case string.split_once(pattern, on: ":") {
-    Ok(#(name, _type_annotation)) -> {
-      let name = string.trim(name)
-      case is_simple_identifier(name) {
-        True -> Some(name)
-        False -> None
-      }
-    }
-    Error(_) ->
-      case is_simple_identifier(pattern) {
-        True -> Some(pattern)
-        False -> None
-      }
+fn extract_name_from_tokens(tokens: List(token.Token)) -> Option(String) {
+  case tokens {
+    [] | [token.Equal, ..] -> None
+    [token.Name(name), ..] -> Some(name)
+    [_, ..rest] -> extract_name_from_tokens(rest)
   }
-}
-
-fn is_simple_identifier(value: String) -> Bool {
-  case value {
-    "_" -> False
-    _ ->
-      case string.to_graphemes(value) {
-        [] -> False
-        [first, ..rest] ->
-          is_identifier_start(first) && list.all(rest, is_identifier_continue)
-      }
-  }
-}
-
-fn is_identifier_start(value: String) -> Bool {
-  string.contains(does: "abcdefghijklmnopqrstuvwxyz_", contain: value)
-}
-
-fn is_identifier_continue(value: String) -> Bool {
-  string.contains(does: "abcdefghijklmnopqrstuvwxyz_0123456789", contain: value)
 }
 
 /// Injects the necessary hidden imports for the caching engine into the generated file.
