@@ -429,7 +429,6 @@ fn make_normal_binding_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  let index = list.length(bindings)
   case binding.names {
     [name] ->
       source.header(True, False)
@@ -438,7 +437,7 @@ fn make_normal_binding_source(
       <> functions_source(functions)
       <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
-      <> generate_current_binding(binding, index)
+      <> generate_current_binding(binding)
       <> "  terminal.println(gsh_internal_string.inspect("
       <> name
       <> "))\n"
@@ -456,14 +455,13 @@ fn make_complex_binding_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  let index = list.length(bindings)
   source.header(False, False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> generate_current_binding(binding, index)
+  <> generate_current_binding(binding)
   <> "  terminal.println(\"ok\")\n"
   <> "}\n"
 }
@@ -475,31 +473,21 @@ fn make_assert_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  let index = list.length(bindings)
   source.header(False, False)
   <> imports_source(imports)
   <> types_source(types)
   <> functions_source(functions)
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> generate_current_binding(binding, index)
+  <> generate_current_binding(binding)
   <> "  terminal.println(\"ok\")\n"
   <> "}\n"
 }
 
-/// Builds a capture syntax for the bound variables (e.g., `x` or `#(a, b)`).
-fn build_capture_group(names: List(String)) -> String {
-  case names {
-    [] -> "Nil"
-    [name] -> name
-    _ -> "#(" <> string.join(names, ", ") <> ")"
-  }
-}
-
 /// CURRENT BINDING: Generates exact raw code for pristine compiler errors, 
 /// then manually pushes the resulting variables into the cache.
-fn generate_current_binding(binding: Binding, index: Int) -> String {
-  let cache_key = "gsh_bind_" <> int.to_string(index)
+fn generate_current_binding(binding: Binding) -> String {
+  let cache_key = "gsh_bind_" <> string.join(binding.names, "_")
   let capture = build_capture_group(binding.names)
 
   "  "
@@ -512,11 +500,9 @@ fn generate_current_binding(binding: Binding, index: Int) -> String {
   <> ")\n"
 }
 
-/// HISTORICAL BINDING: Safely restores previous variables from the cache. 
-/// It places the original user source inside an unexecuted closure to guarantee 
-/// the Gleam compiler can accurately infer the types of the restored variables.
-fn generate_historical_binding(binding: Binding, index: Int) -> String {
-  let cache_key = "gsh_bind_" <> int.to_string(index)
+/// HISTORICAL BINDING: Safely restores previous variables from the cache.
+fn generate_historical_binding(binding: Binding) -> String {
+  let cache_key = "gsh_bind_" <> string.join(binding.names, "_")
   let capture = build_capture_group(binding.names)
 
   "  let "
@@ -533,14 +519,11 @@ fn generate_historical_binding(binding: Binding, index: Int) -> String {
   <> "  })\n"
 }
 
-/// Recursively iterates over all historical bindings in the REPL session 
-/// and regenerates them inside the new `gsh_entry()` function. 
-/// It also appends a dummy `let _ = name` to prevent Gleam's unused variable warnings.
 fn bindings_source(bindings: List(Binding)) -> String {
-  bindings_source_loop(bindings, 0)
+  bindings_source_loop(bindings)
 }
 
-fn bindings_source_loop(bindings: List(Binding), index: Int) -> String {
+fn bindings_source_loop(bindings: List(Binding)) -> String {
   case bindings {
     [] -> ""
     [binding, ..rest] -> {
@@ -549,10 +532,19 @@ fn bindings_source_loop(bindings: List(Binding), index: Int) -> String {
         |> list.map(fn(name) { "  let _ = " <> name <> "\n" })
         |> string.join("")
 
-      generate_historical_binding(binding, index)
+      generate_historical_binding(binding)
       <> mark_used
-      <> bindings_source_loop(rest, index + 1)
+      <> bindings_source_loop(rest)
     }
+  }
+}
+
+/// Builds a capture syntax for the bound variables (e.g., `x` or `#(a, b)`).
+fn build_capture_group(names: List(String)) -> String {
+  case names {
+    [] -> "Nil"
+    [name] -> name
+    _ -> "#(" <> string.join(names, ", ") <> ")"
   }
 }
 
