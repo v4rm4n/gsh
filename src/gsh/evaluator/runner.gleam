@@ -42,10 +42,10 @@ pub fn build_project() -> Result(String, #(Int, String)) {
 
 /// The core execution pipeline for evaluated code.
 pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
-  // 1. Fast-path Gleam compilation straight to .erl source (skips full build graph & .beam disk writes)
+  // 1. Output to a dedicated directory ('gsh_eval') so 'gsh' metadata isn't nuked in --lib
   let args = [
     "compile-package", "--target", "erlang", "--package", ".", "--out",
-    "build/dev/erlang/gsh", "--lib", "build/dev/erlang", "--no-beam",
+    "build/dev/erlang/gsh_eval", "--lib", "build/dev/erlang", "--no-beam",
   ]
 
   case shellout.command(run: "gleam", with: args, in: ".", opt: []) {
@@ -61,13 +61,12 @@ pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
       )
 
     Ok(_) -> {
-      // 2. Compile the generated .erl file directly into RAM via Erlang's compile:file
+      // 2. Read the generated .erl file from the isolated gsh_eval build directory
       let erl_path =
-        "build/dev/erlang/gsh/_gleam_artefacts/" <> module_name <> ".erl"
+        "build/dev/erlang/gsh_eval/_gleam_artefacts/" <> module_name <> ".erl"
 
       case runtime.compile_and_load(erl_path, module_name) {
         Ok(_) -> {
-          // 3. Execute entrypoint in memory
           case runtime.run_entry(module_name, "gsh_entry") {
             Ok(_) ->
               Evaluation(
