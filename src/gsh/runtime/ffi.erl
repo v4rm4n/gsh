@@ -11,7 +11,9 @@
     store_has/1,
     get_args/0,
     boot_app/1,
-    pid_from_string/1
+    pid_from_string/1,
+    fix_logger_staircase/0, 
+    format/2
 ]).
 
 %% Returns the current system time in microseconds to guarantee 
@@ -111,3 +113,37 @@ boot_app(ModuleNameBin) ->
 %% Converts a string like "<0.83.0>" into an actual Erlang PID
 pid_from_string(Bin) ->
     list_to_pid(binary_to_list(Bin)).
+
+%% Wraps the active logger formatter to natively inject \r\n 
+%% so background logs render correctly while the terminal is in raw mode.
+fix_logger_staircase() ->
+    case logger:get_handler_config(default) of
+        {ok, #{formatter := {Mod, Config}} = HandlerConfig} ->
+            ProxyState = #{proxy_mod => Mod, proxy_config => Config},
+            NewConfig = HandlerConfig#{formatter => {?MODULE, ProxyState}},
+            logger:set_handler_config(default, NewConfig);
+        _ -> ok
+    end.
+
+%% Fixed: The callback for our proxy formatter must be named format/2
+format(LogEvent, #{proxy_mod := OriginalMod, proxy_config := OriginalConfig}) ->
+    try
+        %% Call the original formatter (preserves Gleam's colors and Logfmt!)
+        Formatted = OriginalMod:format(LogEvent, OriginalConfig),
+        
+        %% Fixed: Safely handle deep unicode lists (Gleam strings)
+        Bin = unicode:characters_to_binary(Formatted, utf8),
+        
+        case Bin of
+            B when is_binary(B) ->
+                %% Strip any existing \r to prevent doubling up, then replace \n with \r\n
+                NoCr = binary:replace(B, <<"\r">>, <<>>, [global]),
+                binary:replace(NoCr, <<"\n">>, <<"\r\n">>, [global]);
+            _ -> 
+                Formatted %% Fallback if conversion fails
+        end
+    catch
+        _:_ -> 
+            %% Failsafe to guarantee the logger never takes down the VM
+            <<"[GSH] Formatter Proxy Error\r\n">>
+    end.

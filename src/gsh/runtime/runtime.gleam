@@ -68,3 +68,6 @@ pub fn boot_app(module: String) -> Result(Dynamic, String)
 /// helper to allow seamless interaction with background actors.
 @external(erlang, "ffi", "pid_from_string")
 pub fn pid_from_string(pid: String) -> process.Pid
+
+@external(erlang, "ffi", "fix_logger_staircase")
+pub fn fix_logger_staircase() -> Nil

@@ -482,25 +482,13 @@ fn generate_cached_binding(binding: Binding, index: Int) -> String {
   "  "
   <> keyword
   <> binding.pattern
-  <> " = case gsh_store.has(\""
+  <> " = gsh_store.cache(\""
   <> cache_key
-  <> "\") {\n"
-  <> "    True -> gsh_store.get(\""
-  <> cache_key
-  <> "\")\n"
-  <> "    False -> {\n"
-  // Isolate the value on its own line!
-  <> "      let gsh_internal_val = {\n"
-  <> "        "
+  <> "\", fn() {\n"
+  <> "    "
   <> binding.value
   <> "\n"
-  <> "      }\n"
-  <> "      gsh_store.put(\""
-  <> cache_key
-  <> "\", gsh_internal_val)\n"
-  <> "      gsh_internal_val\n"
-  <> "    }\n"
-  <> "  }\n"
+  <> "  })\n"
 }
 
 /// Recursively iterates over all historical bindings in the REPL session 

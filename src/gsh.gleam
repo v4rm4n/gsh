@@ -60,8 +60,12 @@ pub fn main() -> Nil {
       list.each(args, fn(app_module) {
         case runtime.boot_app(app_module) {
           Ok(pid) -> {
-            // pid is returned as Dynamic, so we inspect it to get <0.X.0>
-            let pid_str = string.inspect(pid)
+            // Strip out the ugly //erl() syntax wrapper!
+            let pid_str =
+              string.inspect(pid)
+              |> string.replace("//erl(", "")
+              |> string.replace(")", "")
+
             terminal.println(app_module <> " -> " <> pid_str)
           }
           Error(err) -> {
@@ -77,7 +81,10 @@ pub fn main() -> Nil {
     }
   }
 
-  // 2. Start the shell as usual
+  // 2. Wrap the logger to prevent staircasing in background jobs
+  runtime.fix_logger_staircase()
+
+  // 3. Start the shell as usual
   let assert Ok(_) = tty.enter_raw()
 
   banner()

@@ -18,10 +18,21 @@ pub fn put(key: String, value: a) -> a
 /// Note: This is dynamically typed because the cache holds everything from 
 /// basic integers to complex Erlang PIDs and custom types.
 @external(erlang, "ffi", "store_get")
-pub fn get(key: String) -> a
+fn get(key: String) -> a
 
 /// Checks if a given key already exists in the Process Dictionary.
 /// The GSH evaluator uses this to determine if a binding's side-effects 
 /// need to be executed or if they can be skipped by fetching from the cache.
 @external(erlang, "ffi", "store_has")
-pub fn has(key: String) -> Bool
+fn has(key: String) -> Bool
+
+pub fn cache(key: String, compute: fn() -> a) -> a {
+  case has(key) {
+    True -> get(key)
+    False -> {
+      let val = compute()
+      put(key, val)
+      val
+    }
+  }
+}
