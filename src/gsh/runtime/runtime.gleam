@@ -8,8 +8,9 @@
 
 import etch/erlang/tty
 import gleam/dynamic.{type Dynamic}
-import gleam/erlang/atom
+import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process
+import gleam/string
 
 @external(erlang, "ffi", "system_time")
 pub fn system_time() -> Int
@@ -82,3 +83,20 @@ pub fn compile_and_load(
 /// catching any Erlang runtime exceptions (e.g. pattern match failures, crashes).
 @external(erlang, "ffi", "run_entry")
 pub fn run_entry(module: String, function: String) -> Result(Dynamic, Dynamic)
+
+@external(erlang, "code", "purge")
+fn ffi_purge(module: Atom) -> Bool
+
+@external(erlang, "code", "load_file")
+fn ffi_load_file(module: Atom) -> Dynamic
+
+/// Forces the Erlang VM to drop its RAM cache and read the latest disk artifact.
+pub fn hot_reload(module_path: String) -> Nil {
+  // Convert Gleam paths ("gleam/httpc") to Erlang modules ("gleam@httpc")
+  let erl_name = string.replace(module_path, "/", "@")
+  let mod_atom = atom.create(erl_name)
+
+  let _ = ffi_purge(mod_atom)
+  let _ = ffi_load_file(mod_atom)
+  Nil
+}

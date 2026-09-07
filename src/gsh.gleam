@@ -179,7 +179,18 @@ fn handle_input(input: String, state: ShellState) -> Nil {
 
         Ok(output) -> {
           terminal.println(output)
-          terminal.println("Ok")
+
+          // Auto-reload all active imports to reflect the new disk artifacts
+          list.each(state.imports, fn(imp) {
+            let path = string.replace(imp, "import ", "") |> string.trim()
+            let real_path = case string.split_once(path, on: " as ") {
+              Ok(#(p, _)) -> string.trim(p)
+              Error(_) -> path
+            }
+            runtime.hot_reload(real_path)
+          })
+
+          terminal.println("Ok (Imports hot-reloaded)")
         }
 
         Error(#(_, output)) -> {
