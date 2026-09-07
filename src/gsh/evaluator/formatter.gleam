@@ -1,10 +1,11 @@
 //// The `formatter` module is responsible for cleaning up and beautifying 
-//// the output from the Gleam compiler and evaluator.
+//// the raw output emitted by the Gleam compiler and Erlang runtime.
 ////
-//// Because GSH works by compiling a temporary file behind the scenes, standard 
-//// compiler output often includes noisy "unused variable" warnings or absolute 
-//// file paths. This module parses that text, strips out the noise, replaces 
-//// temporary file paths with "REPL", and applies ANSI syntax highlighting.
+//// Because GSH executes code by compiling temporary `gsh_eval_X.gleam` files, 
+//// the underlying compiler frequently generates noisy "unused variable" warnings 
+//// and exposes absolute internal file paths. This module intercepts that text stream, 
+//// purges the noise, rewrites stack traces to simulate a native REPL environment, 
+//// and applies ANSI syntax highlighting.
 
 // src/gsh/evaluator/formatter.gleam
 
@@ -14,8 +15,12 @@ import gleam/list
 import gleam/string
 
 /// Processes the standard output of a successful code evaluation.
-/// It filters out any noisy compiler warnings, trims whitespace, and applies 
-/// ANSI syntax highlighting so the result looks beautiful in the terminal.
+/// 
+/// **Formatting Pipeline:**
+/// * Splits the raw output by line and feeds it through the warning filter.
+/// * Trims trailing whitespace.
+/// * Applies dynamic ANSI syntax highlighting via the `contour` library so 
+///   returned data structures (like tuples or records) look native to the terminal.
 pub fn format_output(output: String) -> String {
   output
   |> string.split("\n")
@@ -26,8 +31,12 @@ pub fn format_output(output: String) -> String {
 }
 
 /// Processes the output of a failed code evaluation (compiler error or runtime crash).
-/// Filters out warnings, trims whitespace, and most importantly, rewrites the 
-/// error trace so it doesn't expose the temporary `gsh_eval.gleam` file path.
+/// 
+/// **Error Pipeline:**
+/// * Runs the identical warning filter to strip out unrelated noise.
+/// * Trims whitespace.
+/// * Passes the resulting string through the `hide_internal_path` interceptor 
+///   so the user sees a pristine REPL error trace rather than a filesystem leak.
 pub fn format_error(output: String) -> String {
   output
   |> string.split("\n")
@@ -38,8 +47,12 @@ pub fn format_error(output: String) -> String {
   <> "\n"
 }
 
-/// Scans error output for references to the internal evaluator file (`gsh_eval_X.gleam`).
-/// Replaces relative disk paths with "REPL" to keep the terminal output pristine.
+/// Scans error output for references to the dynamically generated evaluator 
+/// files (e.g., `gsh_eval_4.gleam`). 
+/// 
+/// Safely parses the Gleam compiler's box-drawing characters (`┌─`) to strip out 
+/// the `./test/` directory prefix and dynamic file ID, seamlessly replacing it 
+/// with a static `REPL` identifier.
 fn hide_internal_path(output: String) -> String {
   output
   |> string.split("\n")
@@ -64,9 +77,11 @@ fn hide_internal_path(output: String) -> String {
   |> string.join("\n")
 }
 
-/// A recursive state-machine filter that removes multi-line compiler warnings.
-/// When it detects a warning header, it switches to `skipping = True` and drops 
-/// lines until it encounters something that looks like actual runtime output.
+/// A recursive state-machine filter that purges multi-line compiler warnings.
+/// 
+/// When it detects a warning header (e.g., `warning:`), it toggles its state 
+/// to `skipping = True` and drops subsequent lines until it encounters something 
+/// that matches the heuristic for actual runtime output or return values.
 fn filter_warning_lines(
   lines: List(String),
   skipping: Bool,
@@ -104,8 +119,8 @@ fn is_warning_header(line: String) -> Bool {
   string.contains(line, "Warning:") || string.starts_with(line, "warning:")
 }
 
-/// A heuristic function that attempts to detect when a compiler warning block 
-/// has ended and the actual stdout or result data has begun.
+/// A heuristic whitelist function that attempts to detect when a compiler warning 
+/// block has ended and the actual stdout or result data has begun.
 fn is_runtime_output(line: String) -> Bool {
   let line = string.trim(line)
 

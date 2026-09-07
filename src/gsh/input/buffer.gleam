@@ -1,9 +1,9 @@
 //// The `buffer` module handles multiline input detection for the REPL.
 ////
-//// When a user types a command that spans multiple lines (like a `case` statement,
-//// a long list, or a function definition), this module analyzes the syntax tree's 
-//// surface level to determine if the user is finished typing or if the shell 
-//// should prompt for a continuation line (`...>`).
+//// When a user enters code spanning multiple lines (like a `case` block, 
+//// anonymous function, or complex data structure), this module analyzes the 
+//// surface AST to determine if the statement is complete or requires additional 
+//// input via the continuation prompt (`...>`).
 
 // src/gsh/input/buffer.gleam
 
@@ -11,9 +11,17 @@ import gleam/list
 import glexer
 import glexer/token
 
-/// Evaluates a string of Gleam source code to determine if it is structurally complete.
-/// It uses the lexer to verify that no strings are left open, and all opened 
-/// parentheses `()`, square brackets `[]`, and curly braces `{}` have been properly closed.
+/// Analyzes a string of Gleam source code to determine if it is structurally complete.
+/// 
+/// **Verification Strategy:**
+/// * **String Termination:** Lexes the string to check for `UnterminatedString` 
+///   tokens. If an unclosed string is found, evaluation is deferred.
+/// * **Delimiter Balancing:** Tracks opening and closing delimiters—parentheses `()`, 
+///   brackets `[]`, and braces `{}`—using token streams. Because matching relies on 
+///   lexer output rather than raw characters, delimiters enclosed within strings or 
+///   comments are safely ignored.
+/// * **Completion Criteria:** Returns `True` only when all delimiter depth counts 
+///   reach zero or less, signaling that the statement is ready for evaluation.
 pub fn is_complete(input: String) -> Bool {
   let tokens =
     glexer.new(input)

@@ -1,8 +1,9 @@
-//// The `bindings` module provides functionality for inspecting the current 
-//// variable environment of the shell session.
+//// The `bindings` module provides introspection capabilities for the shell's 
+//// lexical environment.
 ////
-//// When a user types a command to list active variables, this module formats 
-//// and prints the active bindings that are currently persisted in the REPL's state.
+//// It allows users to query the currently active REPL state to see exactly 
+//// which variables are available in memory, handling both simple assignments 
+//// and complex pattern-matched destructurings.
 
 // src/gsh/command/bindings.gleam
 
@@ -11,8 +12,13 @@ import gleam/list
 import gsh/evaluator/binding.{type Binding}
 import gsh/input/terminal
 
-/// Prints a formatted summary of all currently active variables in the REPL session.
-/// Outputs a list of variable names followed by the total count.
+/// Renders a formatted, human-readable summary of all active variables 
+/// currently tracked by the REPL's state manager.
+/// 
+/// **Output Format:**
+/// * Prints an indented list of variable names or binding patterns.
+/// * Gracefully handles empty states by printing `(none)`.
+/// * Appends a summary footer with the total count of active bindings.
 pub fn show(bindings: List(Binding)) -> Nil {
   terminal.println("")
   terminal.println("Loaded bindings:")
@@ -30,10 +36,14 @@ pub fn show(bindings: List(Binding)) -> Nil {
   terminal.println("Total: " <> int.to_string(list.length(bindings)))
 }
 
-/// Helper function to determine the printable name of a binding.
-/// If exactly one variable is bound (e.g., `let x = 1` or `let Ok(val) = ...`), it uses that.
-/// If it's a complex pattern matching multiple variables (e.g., `let #(a, b) = ...`), 
-/// it falls back to printing the raw pattern string.
+/// Resolves the most readable string representation for a given binding instance.
+/// 
+/// **Resolution Logic:**
+/// * **Single Bindings:** Extracts and prints the direct variable name 
+///   (e.g., `let x = 1` or `let Ok(val) = ...` yields `x` or `val`).
+/// * **Complex Destructuring:** If a statement binds multiple variables simultaneously 
+///   (e.g., `let #(a, b) = ...`), it falls back to printing the raw pattern string 
+///   to accurately represent the tuple or record structure.
 fn display_name(binding: Binding) -> String {
   case binding.names {
     [name] -> name

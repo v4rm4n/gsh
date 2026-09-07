@@ -1,14 +1,18 @@
-//// The `evaluator` module is the beating heart of the GSH REPL.
+//// The `evaluator` module is the core module of the GSH REPL.
 ////
 //// Because Gleam is statically typed and compiled, we cannot evaluate raw AST 
-//// dynamically like Elixir's IEx. Instead, this module takes the user's input, 
-//// combines it with all previous session state (imports, bindings, types), 
-//// and generates a temporary `gsh_eval.gleam` file.
+//// dynamically like Elixir's IEx. Instead, this module acts as a synthetic runtime, 
+//// taking the user's input, injecting historical state (imports, bindings, types, functions), 
+//// and generating a unique `gsh_eval_X.gleam` file for execution.
 ////
-//// Crucially, this is where the "Side-Effect Magic Caching" happens. Every 
-//// variable assignment is wrapped in a check against the Erlang Process Dictionary, 
-//// ensuring that `let x = io.println("test")` only prints once, even as the 
-//// file is re-compiled for subsequent REPL prompts.
+//// **Key Capabilities:**
+//// * **Token Routing:** Uses `glexer` to parse input and accurately classify the statement 
+////   (import, type, function, binding, or raw expression).
+//// * **Side-Effect Caching:** Wraps every variable assignment in an Erlang Process Dictionary 
+////   check, ensuring side effects (like `io.println`) execute exactly once per session even 
+////   as the file is continually recompiled.
+//// * **Cache Collision Prevention:** Appends the `prompt_count` to module names to 
+////   guarantee the Erlang VM loads fresh bytecode from disk on every execution.
 
 // src/gsh/evaluator/evaluator.gleam
 
@@ -25,13 +29,17 @@ import gsh/evaluator/source
 import gsh/runtime/runtime
 import simplifile
 
-// const evaluator_path = "test/gsh_eval.gleam"
-
-/// The main entry point for code evaluation.
-/// 1. Analyzes the input to determine if it is an import, type, function, binding, or expression.
-/// 2. Generates the full source code for a temporary Gleam module.
-/// 3. Writes the file to disk and passes it to the `runner` to be compiled and executed.
-/// 4. Returns the result, updating the shell state if new bindings/imports were successfully evaluated.
+/// The primary orchestration engine for REPL input execution.
+/// 
+/// **Execution Pipeline:**
+/// 1. **Lexical Analysis:** Scans the raw string to intercept syntax errors (e.g., open strings) 
+///    and strips whitespace/comments to correctly route the syntax tree.
+/// 2. **Code Generation:** Passes the tokens to the appropriate source builder and recursively 
+///    injects the historical `ShellState` variables to maintain lexical scope.
+/// 3. **Compilation:** Writes the generated code to a unique file in `test/` and triggers 
+///    the `runner` for background compilation and VM execution.
+/// 4. **Cleanup & State:** Deletes the temporary file, calculates execution latency for debug 
+///    logs, and returns the extracted definitions so the REPL can update its active state.
 pub fn evaluate(
   input: String,
   bindings: List(Binding),

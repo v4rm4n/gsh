@@ -1,31 +1,34 @@
 //// The `store` module provides a lightweight, persistent key-value cache 
-//// backed by the Erlang Process Dictionary.
+//// backed by the Erlang Process Dictionary (`erlang:get/1` and `erlang:put/2`).
 ////
-//// In a standard file-backed REPL, every time the file is re-evaluated, 
-//// all previous side-effects (like spawning processes or DB writes) would run again. 
-//// GSH avoids this by wrapping every `let` binding in a cache check. 
-//// This store ensures that variables are evaluated exactly once and kept alive 
-//// in the VM's memory across multiple REPL prompts.
+//// In GSH's synthetic runtime approach, generated evaluation modules re-declare historical 
+//// statements to maintain lexical scope. To prevent duplicate side-effects (such as process 
+//// spawning or network calls), every variable binding is wrapped in a cache lookup. 
+//// This module ensures that bindings are computed exactly once during their initial evaluation 
+//// and retrieved directly from BEAM process memory in subsequent prompts.
 
 // src/gsh/runtime/store.gleam
 
-/// Saves a value into the Process Dictionary under the given string key.
-/// Returns the saved value so it can be returned inline during evaluation.
+/// Stores a dynamically typed value in the Erlang Process Dictionary under the specified string key.
+/// Returns the stored value directly to support inline assignments within generated code.
 @external(erlang, "ffi", "store_put")
 pub fn put(key: String, value: a) -> a
 
-/// Retrieves a value from the Process Dictionary by its key.
-/// Note: This is dynamically typed because the cache holds everything from 
-/// basic integers to complex Erlang PIDs and custom types.
+/// Retrieves a value from the Erlang Process Dictionary associated with the specified key.
+/// Unsafely coerced to type `a` as the process memory contains diverse runtime values.
 @external(erlang, "ffi", "store_get")
 fn get(key: String) -> a
 
-/// Checks if a given key already exists in the Process Dictionary.
-/// The GSH evaluator uses this to determine if a binding's side-effects 
-/// need to be executed or if they can be skipped by fetching from the cache.
+/// Checks if a key exists in the Erlang Process Dictionary.
+/// Used by the evaluator engine to determine whether a statement must be re-executed or read from memory.
 @external(erlang, "ffi", "store_has")
 fn has(key: String) -> Bool
 
+/// Evaluates a computation closure or retrieves its cached result from process memory.
+/// 
+/// **Cache Logic:**
+/// * If `key` exists in the Erlang Process Dictionary, retrieves and returns the stored value immediately.
+/// * If `key` is absent, executes the `compute` closure, caches the evaluated result under `key`, and returns it.
 pub fn cache(key: String, compute: fn() -> a) -> a {
   case has(key) {
     True -> get(key)

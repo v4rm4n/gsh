@@ -1,9 +1,9 @@
-//// The `reader` module provides the non-blocking event loop for terminal input.
+//// The `reader` module provides an event-driven terminal polling loop for raw-mode TTY input.
 ////
-//// When the terminal is in raw mode, keystrokes are streamed immediately without 
-//// waiting for the user to press Enter. This module uses the `etch` library to 
-//// poll the terminal, filter out noise (like mouse clicks or window resizes), 
-//// and map valid keystrokes into the shell's internal `Key` domain model.
+//// When operating in raw mode, user keystrokes are received as unbuffered input streams. 
+//// This module wraps the low-level `etch` event parser to poll TTY state, filter out non-keyboard 
+//// signals (such as window resizes or mouse movements), intercept control chord modifiers 
+//// (e.g., `Ctrl+L` or `Ctrl+Left`), and map raw events into the shell's structured `Key` domain.
 
 // src/gsh/input/reader.gleam
 
@@ -16,12 +16,14 @@ import gsh/input/key.{
   Character, CtrlL, CtrlLeft, CtrlRight, End, Enter, Home, Tab, Unknown,
 }
 
-/// Polls the terminal for a keyboard event. 
+/// Polls the raw TTY stream for the next valid keyboard event.
 /// 
-/// Because `input.read()` is non-blocking, calling it in a tight loop would 
-/// consume 100% of a CPU core. To prevent this, if no key is pressed (`None`), 
-/// the process sleeps for 5 milliseconds before polling again. 
-/// Non-keyboard events (like mouse movements) are safely ignored.
+/// **Polling & CPU Yielding:**
+/// * Calls `input.read()` to retrieve pending TTY events without thread blocking.
+/// * Yields thread execution via `process.sleep(5)` when no input is available (`None`), 
+///   preventing high CPU utilization during idle REPL prompts.
+/// * Recursively discards non-keyboard terminal events (e.g., window size changes, mouse clicks) 
+///   or stream parse errors until a valid key event is received.
 pub fn read_key() -> GshKey {
   // `input.read()` returns Option(Result(Event, EventError))
   case input.read() {
@@ -40,11 +42,13 @@ pub fn read_key() -> GshKey {
   }
 }
 
-/// Translates the external `etch` key event into our internal `GshKey` type.
+/// Maps low-level `etch/event.KeyEvent` records to the shell's internal `GshKey` domain type.
 /// 
-/// This mapping handles modifier keys (like Control) to ensure that sequences 
-/// like `Ctrl+L` are correctly interpreted as a clear-screen command rather 
-/// than printing the literal character "l".
+/// **Modifier Disambiguation:**
+/// * Intercepts control modifiers (`key_event.modifiers.control`) before checking base keycodes.
+/// * Translates terminal control sequences (e.g., `Ctrl+L`, `\f`) to `CtrlL`.
+/// * Maps chorded arrow combinations (`Ctrl+Left`, `Ctrl+Right`) to word-boundary movement variants, 
+///   reserving base `LeftArrow` and `RightArrow` for single-grapheme cursor navigation.
 fn map_etch_key(key_event: event.KeyEvent) -> GshKey {
   let is_ctrl = key_event.modifiers.control
 

@@ -1,12 +1,17 @@
 //// `gsh` is the core entry point for the Interactive Gleam Shell.
 ////
-//// It acts as a development orchestrator, providing two main capabilities:
+//// It acts as a development orchestrator, providing three main capabilities:
 //// 
 //// 1. **Zero-Config Bootloader:** Intercepts CLI arguments to dynamically boot host 
 ////    applications in the background (e.g., `gleam run -m gsh -- my_app`).
-//// 2. **Persistent REPL:** A live-node interactive shell that maintains VM state, 
+//// 2. **Hot Code Swapping:** Provides a `compile` command to manually rebuild the host 
+////    project and trigger Erlang `code:purge` and `code:load_file`, hot-swapping live 
+////    module updates without restarting the shell.
+//// 3. **Persistent REPL:** A live-node interactive shell that maintains VM state, 
 ////    memoizes side effects, and safely handles runtime exceptions while toggling
-////    terminal raw mode to ensure clean I/O.
+////    terminal raw mode to ensure clean I/O. It supports standard expression evaluation, 
+////    lexical variable shadowing, and convenient top-level module syntax (`fn`, `type`) 
+////    for rapid prototyping.
 
 // src/gsh.gleam
 
@@ -31,29 +36,58 @@ import gsh/runtime/runtime.{app_version, system_version}
 import simplifile
 
 /// Holds the persistent state of the shell session across evaluations.
-/// This state is passed recursively through the REPL loop to maintain history, 
-/// variable bindings, and declared types/functions.
+/// This state is passed recursively through the REPL loop to seamlessly inject 
+/// historical context into each dynamically generated module.
 pub type ShellState {
   ShellState(
+    /// Increments on every REPL execution to guarantee uniquely named Erlang 
+    /// modules (e.g., `gsh_eval_1`, `gsh_eval_2`), preventing VM cache collisions.
     prompt_count: Int,
+    /// Active `let` bindings. The shell intelligently drops older bindings 
+    /// only when all of their extracted variables have been fully shadowed.
     bindings: List(binding.Binding),
+    /// Active `import` statements. Checked sequentially to discard duplicates.
     imports: List(String),
+    /// Custom `type` declarations. Stored as a tuple of `#(Type_Name, Source_String)`. 
+    /// Redefining a type automatically prunes the old source to prevent compiler crashes.
     types: List(#(String, String)),
+    /// The raw input strings of previously executed commands, used by the 
+    /// raw-mode editor for Arrow Up/Arrow Down traversal.
     history: List(String),
+    /// Top-level `fn` definitions. Stored as a tuple of `#(Function_Name, Source_String)`. 
+    /// When redefined, the old source string is strictly purged from the active state 
+    /// to satisfy the Gleam compiler's unique-name constraints.
     functions: List(#(String, String)),
+    /// Toggles verbose output for debugging the internal AST parsing and 
+    /// evaluation pipeline.
     debug: Bool,
   )
 }
 
 /// The main entry point. 
 /// 
-/// 1. Intercepts trailing CLI arguments to boot background applications and print their PIDs.
-/// 2. Places the terminal into raw mode for character-by-character input processing.
-/// 3. Starts the recursive REPL loop.
+/// 1. Cleans up any orphaned evaluation files from previous crashed sessions.
+/// 2. Intercepts trailing CLI arguments to boot background host applications.
+/// 3. Injects a custom logger to prevent staircasing in background logs.
+/// 4. Places the terminal into raw mode and starts the recursive REPL loop.
 pub fn main() -> Nil {
-  let _ = simplifile.delete_all(["test/gsh_eval.gleam"])
+  // 1. Clean up any orphaned `gsh_eval_X.gleam` files from previous crashes
+  case simplifile.read_directory("test") {
+    Ok(files) -> {
+      list.each(files, fn(file) {
+        case string.starts_with(file, "gsh_eval_") {
+          True -> {
+            let _ = simplifile.delete("test/" <> file)
+            Nil
+          }
+          False -> Nil
+        }
+      })
+    }
+    Error(_) -> Nil
+  }
 
-  // 1. Intercept ALL CLI arguments and boot them
+  // 2. Intercept ALL CLI arguments and boot them
   let args = runtime.get_args()
 
   case list.is_empty(args) {
@@ -85,10 +119,10 @@ pub fn main() -> Nil {
     }
   }
 
-  // 2. Wrap the logger to prevent staircasing in background jobs
+  // 3. Wrap the logger to prevent staircasing in background jobs
   runtime.fix_logger_staircase()
 
-  // 3. Start the shell as usual
+  // 4. Start the shell as usual
   let assert Ok(_) = tty.enter_raw()
 
   banner()
@@ -134,11 +168,17 @@ fn shell_loop(state: ShellState) -> Nil {
   }
 }
 
-/// Routes the user's input to either internal shell commands (like exit or clear)
-/// or passes it to the evaluator engine.
+/// Routes the user's input to internal shell commands (e.g., `exit`, `clear`, `compile`) 
+/// or passes it to the evaluator engine for execution.
 /// 
-/// Crucially, this function temporarily exits terminal raw mode during evaluation
-/// so that side-effects (like `io.println`) and background server logs render correctly.
+/// **Key Responsibilities:**
+/// * **I/O Management:** Temporarily exits terminal raw mode during evaluation 
+///   so that side-effects (like `io.println`) and background server logs render correctly.
+/// * **State Pruning:** When passing code to the evaluator, it intelligently filters the 
+///   returned AST bindings against the historical state, safely pruning old source strings 
+///   when a variable, type, or function is fully shadowed or redefined.
+/// * **Hot Swapping:** Intercepts the `compile` command to trigger background host 
+///   rebuilds and automatically hot-reloads the VM caches for all active imports.
 fn handle_input(input: String, state: ShellState) -> Nil {
   let history = list.append(state.history, [input])
 
@@ -384,8 +424,15 @@ fn handle_input(input: String, state: ShellState) -> Nil {
   }
 }
 
-/// Builds the autocompletion context (keywords, bindings, module exports) 
-/// and passes control to the line reader.
+/// Constructs the predictive autocompletion dictionary for the current REPL prompt 
+/// before passing control to the raw-mode line reader.
+/// 
+/// **Injected Context:**
+/// * **Keywords:** Standard Gleam syntax primitives (e.g., `let`, `fn`, `case`).
+/// * **Variables:** Dynamically extracted from all active `let` bindings in the state.
+/// * **Module Exports:** Maps active `import` statements to their underlying Erlang 
+///   `.beam` modules, using FFI to scrape and append all publicly exported functions 
+///   under their correct alias (e.g., `list.map`, `list.filter`).
 fn read_command(prompt: String, state: ShellState) -> String {
   let keywords = [
     "let", "assert", "import", "type", "fn", "case", "if", "True", "False",
@@ -420,8 +467,17 @@ fn read_command(prompt: String, state: ShellState) -> String {
   read_lines(prompt, state.history, "", True, completions)
 }
 
-/// Reads user input and continuously buffers lines if the AST is incomplete.
-/// Uses the `...>` prompt for multiline continuations.
+/// Recursively reads and buffers user input until a syntactically complete 
+/// Gleam expression or module definition is formed.
+/// 
+/// **Key Behaviors:**
+/// * **Multiline Prompting:** Shifts from the standard numbered prompt (e.g., `gsh(1)>`) 
+///   to a continuation prompt (`...>`) when an expression spans multiple lines.
+/// * **AST Validation:** Evaluates the accumulated string using `buffer.is_complete` 
+///   to check for unclosed delimiters (like brackets, braces, or quotes). If the syntax 
+///   tree is incomplete, it blocks execution and recurses to prompt for the next line.
+/// * **Accumulation:** Safely concatenates successive inputs with newline characters 
+///   to preserve structural formatting for the evaluator and syntax highlighter.
 fn read_lines(
   prompt: String,
   history: List(String),
@@ -450,8 +506,14 @@ fn read_lines(
   }
 }
 
-/// Resolves a module alias (e.g. `list`) to its full path (`gleam/list`) 
-/// based on the shell's active imports.
+/// Resolves a module alias (e.g., `list` or a custom `l`) back to its fully qualified 
+/// package path (e.g., `gleam/list`) by scanning the shell's active `import` history.
+/// 
+/// **Resolution Logic:**
+/// * **Standard Imports:** Matches paths ending in the alias (e.g., extracting `gleam/list` from `list`).
+/// * **Custom Aliases:** Safely splits and extracts the true path from `as` bindings (e.g., `import gleam/io as print`).
+/// * **Fallback:** If no matching import is found in the state, it assumes the user provided 
+///   the full path directly (e.g., `h gleam/list`) and returns the input untouched.
 fn resolve_alias(alias: String, imports: List(String)) -> String {
   let matched =
     list.find(imports, fn(imp) {

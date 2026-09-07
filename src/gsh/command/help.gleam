@@ -1,7 +1,8 @@
 //// The `help` module provides the built-in command reference for the interactive shell.
 ////
-//// It handles rendering the help menu when the user types the `h()` command, 
-//// giving them a quick cheat sheet for REPL-specific utilities.
+//// It handles rendering the help menu when the user requests assistance, 
+//// providing a quick cheat sheet for REPL-specific utilities, inspection tools, 
+//// and hot-reloading commands.
 
 // src/gsh/command/help.gleam
 
@@ -14,12 +15,15 @@ import gsh/input/terminal
 pub fn show() -> Nil {
   terminal.println(
     "
-GSH commands:
+GSH builtins:
 
-  h()       Show this help
-  v()       Show version
-  k()       Exit shell
-  l()       List loaded bindings
+  h()               Show this help
+  v()               Show version
+  k()               Exit shell
+  l()               List loaded bindings
+  pid(<pid string>) Create BEAM pid from string
+  compile           Rebuild host project and hot-reload imports
+  debug             Toggle AST and evaluator debug output
 ",
   )
 }

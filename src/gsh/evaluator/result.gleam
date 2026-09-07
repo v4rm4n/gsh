@@ -1,44 +1,52 @@
-//// The `result` module defines the data structures returned by the evaluator.
+//// The `result` module defines the core data structures returned by the 
+//// evaluation engine back to the REPL's main state loop.
 ////
-//// When the REPL processes user input, it needs to know more than just what 
-//// text to print to the screen. It needs to know if the execution succeeded, 
-//// what type of error occurred if it failed, and whether there are any new 
-//// variables, imports, or types that need to be saved into the shell's persistent state.
+//// When the shell processes user input, it needs more than just a raw string 
+//// to print. It requires structured metadata detailing execution success, 
+//// error classifications, and any new lexical artifacts (variables, imports, 
+//// types, functions) that must be merged into the persistent `ShellState`.
 
 // src/gsh/evaluator/result.gleam
 
 import gleam/option.{type Option}
 import gsh/evaluator/binding.{type Binding}
 
-/// Represents the complete outcome of a single REPL evaluation cycle.
+/// Encapsulates the complete lifecycle outcome of a single REPL evaluation prompt.
 pub type Evaluation {
   Evaluation(
-    /// The final formatted string (including ANSI colors) to print to the terminal.
+    /// The final formatted string (including ANSI syntax highlighting and debug 
+    /// latency logs) ready to be printed to the terminal.
     output: String,
-    /// True if the code compiled and ran without crashing; False otherwise.
+    /// `True` if the generated code successfully compiled and executed without 
+    /// a VM crash; `False` otherwise.
     success: Bool,
-    /// The specific category of error if the evaluation failed.
+    /// The specific classification of error if the evaluation failed.
     error_kind: ErrorKind,
-    /// A new variable assignment to save to state (e.g., `let x = 1`).
+    /// A successfully evaluated variable assignment (e.g., `let x = 1`) to be 
+    /// appended to the active lexical scope.
     new_binding: Option(Binding),
-    /// A new module import to save to state (e.g., `import gleam/list`).
+    /// A successfully evaluated module import (e.g., `import gleam/list`) to be 
+    /// tracked for subsequent file generations.
     new_import: Option(String),
-    /// A new custom type definition to save to state (e.g., `pub type User { User }`).
+    /// A custom type declaration (stored as `#(Name, Source)`) to be injected 
+    /// into future evaluations.
     new_type: Option(#(String, String)),
-    /// A new custom function definition to save to state.
+    /// A custom function definition (stored as `#(Name, Source)`) to be injected 
+    /// into future evaluations.
     new_function: Option(#(String, String)),
   )
 }
 
-/// Classifies the outcome of the evaluation for error handling.
+/// Classifies the exact failure mode of an evaluation attempt.
 pub type ErrorKind {
-  /// The evaluation completed successfully.
+  /// The execution completed successfully without any compilation or VM faults.
   NoError
 
-  /// The code failed to compile (e.g., syntax error, type mismatch).
+  /// The code failed the Gleam compiler's strict static analysis (e.g., syntax 
+  /// error, type mismatch, or unknown identifier).
   CompileError
 
-  /// The code compiled successfully but crashed the Erlang VM during 
-  /// execution (e.g., division by zero, pattern match failure).
+  /// The code compiled successfully but triggered a fatal exception within the 
+  /// Erlang VM during runtime (e.g., division by zero, `let assert` failure).
   RuntimeError
 }

@@ -2,8 +2,8 @@
 ////
 //// Before sending input to the dynamic evaluator (which would try to compile 
 //// and execute it as Gleam code), the REPL passes the input here. If it matches 
-//// a known command (like `h()` for help or `clear` to wipe the screen), the router 
-//// executes it immediately and tells the shell loop to skip evaluation.
+//// a known command (like `h()` for help, `compile` for hot-reloading, or `clear`), 
+//// the router flags it for immediate execution and tells the shell to skip evaluation.
 
 // src/gsh/command/router.gleam
 
@@ -25,11 +25,14 @@ pub type CommandResult {
   /// The user requested to clear the terminal screen.
   Clear
 
-  /// The user requested to recompile the surrounding Mix/Gleam project.
+  /// The user requested to rebuild the host project and hot-reload active imports.
   Compile
 
+  /// The user requested to toggle verbose AST and evaluator debugging logs.
   ToggleDebug
 
+  /// The user requested documentation for a specific module or function target 
+  /// (e.g., `h gleam/list` or `h list.map`).
   Help(String)
 
   /// The input did not match any built-in commands and should be sent 
@@ -39,9 +42,12 @@ pub type CommandResult {
 
 /// Inspects the raw string input to route it to the appropriate built-in command.
 /// 
-/// It requires access to the current `bindings` and `history_entries` state 
-/// so that commands like `l()` (list bindings) and `history()` have the 
-/// necessary context to print accurate summaries.
+/// **Routing Logic:**
+/// * **Exact Matches:** Checks for fixed command strings like `h()`, `k()`, or `compile`.
+/// * **Prefix Matches:** Intercepts commands with dynamic arguments, such as `h <target>`, 
+///   extracting the target payload for the documentation scraper.
+/// * **Context Injection:** Injects the current `bindings` and `history_entries` 
+///   so introspection commands like `l()` and `history()` can print accurate summaries.
 pub fn handle(
   input: String,
   bindings: List(Binding),

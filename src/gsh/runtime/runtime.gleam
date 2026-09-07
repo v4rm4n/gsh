@@ -1,8 +1,8 @@
-//// The `runtime` module serves as GSH's bridge to the Erlang Virtual Machine (BEAM).
+//// The `runtime` module serves as GSH's low-level bridge to the Erlang Virtual Machine (BEAM).
 //// 
-//// It provides the foreign function interfaces (FFI) necessary for dynamic code loading,
-//// process orchestration, runtime metadata inspection, and catching VM-level exceptions.
-//// Everything in this module delegates to `ffi.erl` or other low-level utilities.
+//// It exposes the Foreign Function Interfaces (FFI) required for dynamic in-memory code loading, 
+//// background actor orchestration, VM metadata inspection, logger modification, and exception trapping. 
+//// All functions in this module delegate directly to Erlang's underlying `code` server or GSH's `ffi.erl` driver.
 
 // src/gsh/runtime/runtime.gleam
 
@@ -12,75 +12,70 @@ import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process
 import gleam/string
 
+/// Returns the current monotonic system time in microseconds.
 @external(erlang, "ffi", "system_time")
 pub fn system_time() -> Int
 
-/// Retrieves the Erlang/OTP and ERTS version string directly from the VM.
-/// Used to display the system information in the startup banner.
+/// Retrieves the running Erlang/OTP release and ERTS version string directly from the VM.
+/// Used to construct system information during startup banner rendering.
 @external(erlang, "ffi", "system_version")
 pub fn system_version() -> String
 
-/// Retrieves the version number of a loaded application (e.g., "gsh").
-/// Used to display the current version of the REPL in the startup banner.
+/// Resolves the application version string for a loaded OTP application (e.g., `gsh`).
 @external(erlang, "ffi", "app_version")
 pub fn app_version(app_name: atom.Atom) -> String
 
-/// Places the terminal into raw mode, allowing the editor to capture keystrokes
-/// character-by-character for features like history traversal and autocomplete.
+/// Enables raw mode on the active TTY stream to capture unbuffered keystrokes.
 pub fn enable_raw_mode() -> Result(Nil, tty.TerminalError) {
   tty.enter_raw()
 }
 
-/// Restores the terminal to standard cooked mode. Must be called before printing
-/// large blocks of text, evaluating side-effects, or exiting the shell.
+/// Disables raw mode and restores standard cooked terminal mode.
 pub fn disable_raw_mode() -> Result(Nil, tty.TerminalError) {
   tty.exit_raw()
 }
 
-/// Dynamically inspects a loaded Erlang module to find all of its exported functions.
-/// This powers GSH's intelligent autocomplete for standard library and project imports.
+/// Dynamically inspects a loaded Erlang module's exports table to return all public function names.
+/// Powers autocomplete suggestions for imported standard library and project modules.
 @external(erlang, "ffi", "get_exports")
 pub fn get_exports(module: String) -> List(String)
 
-/// The core execution bridge. Dynamically loads a freshly compiled `.beam` file 
-/// into the VM and runs a specific function (usually `gsh_entry`). 
-/// 
-/// Crucially, this FFI wrapper catches all Erlang runtime exceptions (like `Badarg`)
-/// and returns them as a safe `Result` so the REPL never crashes.
+/// Dynamically loads a `.beam` bytecode file into the VM and executes a designated function.
+/// Intercepts VM-level exceptions (e.g., `badarg`, `function_clause`) to prevent REPL process crashes.
 @external(erlang, "ffi", "load_and_run")
 pub fn load_and_run(
   module: String,
   function: String,
 ) -> Result(Dynamic, Dynamic)
 
-/// Retrieves the raw command-line arguments passed after the `--` separator.
-/// Used by the bootloader to determine which background applications to orchestrate.
+/// Retrieves raw CLI arguments passed after the `--` separator during shell boot.
+/// Utilized by the bootloader to identify background application modules to start.
 @external(erlang, "ffi", "get_args")
 pub fn get_args() -> List(String)
 
-/// Weaponizes Erlang's auto-loader to boot a background application.
-/// It dynamically locates the compiled module, spawns its `main()` function 
-/// in a new process, and returns the active PID.
+/// Boots a background application module in an isolated Erlang process and returns its active PID.
 @external(erlang, "ffi", "boot_app")
 pub fn boot_app(module: String) -> Result(Dynamic, String)
 
-/// Converts a string representation of a PID (e.g., `"<0.83.0>"`) back into 
-/// a native Erlang `Pid` reference. This is exposed in the REPL as the `pid()` 
-/// helper to allow seamless interaction with background actors.
+/// Converts a formatted string PID representation (e.g., `"<0.83.0>"`) into a native Erlang `Pid` reference.
 @external(erlang, "ffi", "pid_from_string")
 pub fn pid_from_string(pid: String) -> process.Pid
 
+/// Intercepts and wraps the default Erlang logger output handler to convert `\n` into `\r\n`, 
+/// preventing log staircasing artifacts when background processes log during raw-mode TTY sessions.
 @external(erlang, "ffi", "fix_logger_staircase")
 pub fn fix_logger_staircase() -> Nil
 
+/// Compiles an Erlang source file (`.erl`) directly into memory and loads the resulting code 
+/// into the BEAM code server without writing a `.beam` file to disk.
 @external(erlang, "ffi", "compile_and_load")
 pub fn compile_and_load(
   erl_path: String,
   module_name: String,
 ) -> Result(Nil, String)
 
-/// Executes an already-loaded entrypoint function safely in memory, 
-/// catching any Erlang runtime exceptions (e.g. pattern match failures, crashes).
+/// Safely executes an entrypoint function within an already loaded BEAM module, 
+/// trapping runtime crashes and returning them as an error `Result`.
 @external(erlang, "ffi", "run_entry")
 pub fn run_entry(module: String, function: String) -> Result(Dynamic, Dynamic)
 
@@ -90,7 +85,11 @@ fn ffi_purge(module: Atom) -> Bool
 @external(erlang, "code", "load_file")
 fn ffi_load_file(module: Atom) -> Dynamic
 
-/// Forces the Erlang VM to drop its RAM cache and read the latest disk artifact.
+/// Forces the Erlang code server to purge its active RAM cache for a module and reload 
+/// the latest compiled artifact from disk.
+/// 
+/// Automatically translates Gleam module paths (e.g., `gleam/httpc`) to their BEAM 
+/// atom equivalents (`gleam@httpc`).
 pub fn hot_reload(module_path: String) -> Nil {
   // Convert Gleam paths ("gleam/httpc") to Erlang modules ("gleam@httpc")
   let erl_name = string.replace(module_path, "/", "@")

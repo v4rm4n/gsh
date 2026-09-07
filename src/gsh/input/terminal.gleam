@@ -1,10 +1,9 @@
-//// The `terminal` module handles low-level standard output and ANSI escape sequences.
+//// The `terminal` module handles low-level stdout rendering and ANSI escape sequences.
 ////
-//// Because the REPL operates in terminal raw mode, standard formatting rules 
-//// (like a simple `\n` moving the cursor down and to the left) no longer apply. 
-//// This module provides a clean API for rendering text and manually manipulating 
-//// the 2D position of the cursor on the screen without leaking escape codes 
-//// into the rest of the application.
+//// When operating in TTY raw mode, standard carriage return and newline behaviors 
+//// (`\n`) are unhandled by the terminal driver. This module provides an abstraction layer 
+//// for rendering output, handling newline translations (`\r\n`), managing visibility, 
+//// and controlling 2D hardware cursor movement via ANSI control codes.
 
 // src/gsh/input/terminal.gleam
 
@@ -12,34 +11,35 @@ import gleam/int
 import gleam/io
 import gleam/string
 
-/// Clears the entire current line and returns the cursor to the leftmost column.
-/// Uses the ANSI sequence `[2K` (clear entire line) and `\r` (carriage return).
+/// Clears the active terminal line and repositions the cursor to column 0.
+/// 
+/// Dispatches ANSI `\u{001b}[2K` (clear entire line) preceded by `\r` (carriage return).
 pub fn clear_line() -> Nil {
   io.print("\r\u{001b}[2K")
 }
 
-/// Moves the terminal cursor to the left by the specified number of columns.
+/// Repositions the hardware cursor leftward by the specified column count using ANSI `D` sequences.
 pub fn cursor_left(count: Int) -> Nil {
   io.print("\u{001b}[" <> int_to_string(count) <> "D")
 }
 
-/// Moves the terminal cursor to the right by the specified number of columns.
+/// Repositions the hardware cursor rightward by the specified column count using ANSI `C` sequences.
 pub fn cursor_right(count: Int) -> Nil {
   io.print("\u{001b}[" <> int_to_string(count) <> "C")
 }
 
-/// Snaps the cursor directly to the first column of the current line.
+/// Snaps the cursor position to column 0 of the current line via a raw carriage return (`\r`).
 pub fn move_start() -> Nil {
   io.print("\r")
 }
 
-/// Hides the hardware terminal cursor. Useful when redrawing large 
-/// multiline buffers to prevent visual flickering.
+/// Suppresses hardware cursor rendering (`\u{001b}[?25l`) to eliminate visual flickering 
+/// during full-buffer editor redraws.
 pub fn hide_cursor() -> Nil {
   io.print("\u{001b}[?25l")
 }
 
-/// Restores the hardware terminal cursor to visible.
+/// Restores hardware cursor rendering (`\u{001b}[?25h`).
 pub fn show_cursor() -> Nil {
   io.print("\u{001b}[?25h")
 }
@@ -49,39 +49,37 @@ fn int_to_string(value: Int) -> String {
   int.to_string(value)
 }
 
-/// Prints text to the screen. In raw mode, a standard newline (`\n`) only moves 
-/// the cursor down, not to the start of the next line. This safely replaces 
-/// all newlines with CRLF (`\r\n`) so text renders normally.
+/// Outputs string content to stdout while translating standard line feeds (`\n`) 
+/// into raw-mode carriage return/line feed pairs (`\r\n`) to prevent staircasing.
 pub fn print(text: String) -> Nil {
   text
   |> string.replace(each: "\n", with: "\r\n")
   |> io.print()
 }
 
-/// Prints text to the screen and appends a CRLF (`\r\n`) to jump to the next line.
+/// Outputs string content to stdout with `\r\n` line-end translation and appends a trailing `\r\n`.
 pub fn println(text: String) -> Nil {
   text
   |> string.replace(each: "\n", with: "\r\n")
   |> fn(t) { io.print(t <> "\r\n") }
 }
 
-/// Clears all terminal text from the current cursor position down to the bottom 
-/// of the screen. Used by the editor to wipe old multiline blocks before redrawing.
+/// Erases all stdout content from the active cursor position to the bottom of the viewport using ANSI `\u{001b}[J`.
 pub fn clear_below() -> Nil {
   io.print("\u{001b}[J")
 }
 
-/// Moves the terminal cursor straight up by the specified number of rows.
+/// Repositions the cursor upward by the specified row count using ANSI `A` sequences.
 pub fn cursor_up(count: Int) -> Nil {
   io.print("\u{001b}[" <> int.to_string(count) <> "A")
 }
 
-/// Moves the terminal cursor straight down by the specified number of rows.
+/// Repositions the cursor downward by the specified row count using ANSI `B` sequences.
 pub fn cursor_down(count: Int) -> Nil {
-  io.print("\u{001b}[" <> int_to_string(count) <> "B")
+  io.print("\u{001b}[" <> int.to_string(count) <> "B")
 }
 
-/// Clears the entire terminal screen and resets the cursor to the top-left (0,0) position.
+/// Clears the full terminal viewport (`\u{001b}[2J`) and resets cursor placement to home coordinates `(0, 0)` (`\u{001b}[H`).
 pub fn clear_screen() -> Nil {
   io.print("\u{001b}[2J\u{001b}[H")
 }

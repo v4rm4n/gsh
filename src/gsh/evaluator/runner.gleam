@@ -1,9 +1,10 @@
-//// The `runner` module orchestrates the compilation and execution of the shell's 
-//// dynamically generated code.
+//// The `runner` module orchestrates the compilation and execution pipeline 
+//// for the shell's dynamically generated REPL modules.
 ////
-//// It acts as the coordinator between the external system (using `shellout` to 
-//// invoke the Gleam compiler) and the internal Erlang VM (using the `runtime` 
-//// FFI to dynamically load and execute the resulting `.beam` bytecode).
+//// It acts as the bridge between the host filesystem and the Erlang VM, 
+//// utilizing `shellout` to invoke the Gleam compiler for static analysis 
+//// and Erlang generation, and utilizing the `runtime` FFI to dynamically compile, 
+//// load, and execute the resulting code directly in memory.
 
 // src/gsh/evaluator/runner.gleam
 
@@ -17,10 +18,12 @@ import gsh/evaluator/result.{
 import gsh/runtime/runtime
 import shellout
 
-/// Filters whether a successful binding should be saved to the shell's persistent state.
-/// Currently, standard `Let` bindings are persisted, but strict `LetAssert` pattern 
-/// matches are discarded from the global namespace to prevent complex destructuring 
-/// from polluting the simple variable cache.
+/// Filters whether a successfully evaluated binding should be persisted into 
+/// the shell's active state.
+/// 
+/// Currently, standard `Let` bindings are saved, but strict `LetAssert` 
+/// pattern matches are intentionally discarded. This prevents complex, 
+/// fallible destructuring from polluting the REPL's persistent variable cache.
 fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
   case binding {
     Some(binding) ->
@@ -33,14 +36,25 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
   }
 }
 
-/// Triggers a full compilation of the host project using the Gleam CLI.
-/// This is used when the user types the `compile` command in the REPL, 
-/// allowing them to rebuild their background application without leaving the shell.
+/// Triggers a full compilation of the host workspace using the Gleam CLI.
+/// 
+/// This is invoked by the `compile` command in the REPL, allowing developers 
+/// to rebuild their background application and trigger Erlang VM hot-reloads 
+/// without dropping their active shell session.
 pub fn build_project() -> Result(String, #(Int, String)) {
   shellout.command(run: "gleam", with: ["build"], in: ".", opt: [])
 }
 
 /// The core execution pipeline for evaluated code.
+/// 
+/// **Execution Lifecycle:**
+/// 1. **Isolated Compilation:** Invokes `gleam compile-package` targeting an 
+///    isolated `build/dev/erlang/gsh_eval` output directory. This ensures the REPL's 
+///    temporary files never corrupt or overwrite the host project's build cache.
+/// 2. **In-Memory Loading:** Reads the resulting `.erl` file and uses Erlang's 
+///    native compiler FFI to compile it directly into RAM, bypassing `.beam` disk I/O.
+/// 3. **Execution:** Invokes the dynamically loaded `gsh_entry` function, capturing 
+///    the evaluation success or gracefully intercepting Erlang VM runtime crashes.
 pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
   // 1. Output to a dedicated directory ('gsh_eval') so 'gsh' metadata isn't nuked in --lib
   let args = [

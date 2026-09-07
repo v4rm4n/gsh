@@ -1,7 +1,8 @@
-//// The `history` module provides functionality for reviewing previous commands.
+//// The `history` module provides introspection into the REPL's chronological 
+//// execution log.
 ////
-//// When a user wants to see their session's execution history, this module 
-//// formats and prints the chronologically ordered list of inputs.
+//// It allows users to review their past inputs, formatting the raw string 
+//// history into a numbered, human-readable list for quick reference.
 
 // src/gsh/command/history.gleam
 
@@ -9,9 +10,13 @@ import gleam/int
 import gleam/list
 import gsh/input/terminal
 
-/// Prints a numbered list of all previously executed commands in the current 
-/// REPL session. If no commands have been entered yet, it safely notifies 
-/// the user that the history is empty.
+/// Renders a sequentially numbered list of all previously executed commands 
+/// within the current active session.
+/// 
+/// **Formatting Logic:**
+/// * Iterates through the provided history list and prefixes each command 
+///   with its chronological execution index (e.g., `1  let x = 5`).
+/// * Safely handles fresh or recently cleared sessions by printing `(empty)`.
 pub fn show(history: List(String)) -> Nil {
   terminal.println("")
   terminal.println("Command history:")

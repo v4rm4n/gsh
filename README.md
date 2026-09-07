@@ -6,11 +6,11 @@
 > GSH is an interactive REPL for the [Gleam Programming Language](https://gleam.run/) written in Gleam and Erlang.
 
 ## Latest Bugfixes
-- **Masked Internal Evaluator Paths:** Fixed error formatter (`hide_internal_path`) failing to mask static `test/gsh_eval.gleam` paths in compiler error traces, replacing them cleanly with `REPL`.
-
-- **Eliminated False Import Warnings:** Updated code generation headers (`source.header`) to only import `gsh_internal_formatter` during expression evaluations, resolving spurious "unused module" compiler warnings.
-
-- **Eliminated File Persistence:** Added immediate file deletion of `test/gsh_eval.gleam` upon evaluation completion and shell exit, ensuring zero dynamic artifacts remain on disk.
+- **Zero-Collision Dynamic Runtime:** Replaced static file evaluations with dynamically generated, prompt-indexed modules (`gsh_eval_X.gleam`), eliminating BEAM bytecode caching conflicts and stale memory state across evaluation loops.
+- **Masked Internal Evaluator Traces:** Updated error formatting (`hide_internal_path`) to strip dynamic generator file paths from Gleam compiler errors and stack traces, cleanly replacing them with a native `REPL` origin identifier.
+- **Elixir-Style In-REPL Documentation Engine:** Introduced `h <module>` and `h <module.function>` inspection powered by a live `glexer` tokenization pipeline, rendering ANSI-highlighted markdown documentation and type signatures directly in the terminal.
+- **Dynamic Variable Shadowing & Pattern Destructuring:** Re-engineered variable binding extraction to track single assignments (`let x = 1`) and complex pattern destructuring (`let #(a, b) = pair`), preserving accurate variable scope across evaluations.
+- **Spurious Warning Suppression & Cleanup:** Optimized module generation headers (`source.header`) to eliminate unused import/formatter compiler warnings and guaranteed immediate disk cleanup of temporary evaluation files.
 
 ## Installation
 Add `gsh` to your project as a development dependency:
@@ -84,7 +84,7 @@ GSH runs inside a single, long-lived Erlang VM node. To prevent historic variabl
 
   - Subsequent prompts reuse the cached memory pointer, ensuring side-effecting code executes exactly once.
 
-### In-Memory Session State
+### Stateful Lexical Scope Tracking
 Session scope is tracked in an explicit ShellState record across evaluations. GSH dynamically merges, prunes, and re-injects:
 
   - Active variable bindings and shadowed variables

@@ -1,3 +1,9 @@
+//// The `docs` module powers the shell's built-in documentation engine.
+////
+//// It dynamically locates, reads, and lexes Gleam source files on demand to extract 
+//// module-level (`////`) and function-level (`///`) docstrings. It then renders 
+//// these raw strings into formatted, ANSI-colored terminal output for quick reference.
+
 // src/gsh/evaluator/docs.gleam
 
 import gleam/list
@@ -7,7 +13,12 @@ import glexer
 import glexer/token
 import simplifile
 
-/// Public entry point for `h module` (e.g., `h simplifile`)
+/// Extracts and formats the top-level module documentation (e.g., `h simplifile`).
+/// 
+/// **Extraction Logic:**
+/// * Locates the module's `.gleam` source file on disk.
+/// * Lexes the raw source and filters out all tokens except `CommentModule` (`////`).
+/// * Renders a centered, bolded title followed by the parsed Markdown description.
 pub fn get_module_help(module_path: String) -> String {
   case find_source(module_path) {
     Error(_) ->
@@ -35,7 +46,14 @@ pub fn get_module_help(module_path: String) -> String {
   }
 }
 
-/// Public entry point for `h module.function` (e.g., `h simplifile.append`)
+/// Extracts and formats documentation and type signatures for a specific function 
+/// (e.g., `h simplifile.append`).
+/// 
+/// **Extraction Logic:**
+/// * Lexes the target module and scans sequentially for the target function name.
+/// * Captures the preceding block of `CommentDoc` (`///`) strings.
+/// * Captures the exact function signature tokens up to the opening curly brace.
+/// * Renders the signature in green, followed by the formatted Markdown description.
 pub fn get_function_help(module_path: String, func_name: String) -> String {
   case find_source(module_path) {
     Error(_) ->
@@ -149,7 +167,7 @@ fn take_signature(
   }
 }
 
-/// Centers a title for the terminal and makes it bold/colored
+/// Centers a title for the terminal and applies bold cyan ANSI coloring.
 fn format_title(title: String) -> String {
   let len = string.length(title)
   // Assume an 80-character standard terminal width for centering
@@ -160,7 +178,7 @@ fn format_title(title: String) -> String {
   "\n" <> padding <> "\u{001b}[1;36m" <> title <> "\u{001b}[0m\n\n"
 }
 
-/// Parses raw Gleam comments into beautiful terminal output
+/// Parses raw Gleam Markdown comments into formatted terminal output.
 fn format_markdown(text: String) -> String {
   text
   |> string.split("\n")
@@ -169,6 +187,8 @@ fn format_markdown(text: String) -> String {
   |> string.trim()
 }
 
+/// Translates individual Markdown line features (like headers and lists) 
+/// into structural ANSI equivalents.
 fn format_line(line: String) -> String {
   let trimmed = string.trim(line)
 
@@ -187,13 +207,15 @@ fn format_line(line: String) -> String {
   }
 }
 
-/// Wraps anything inside backticks in yellow ANSI color
+/// Wraps anything inside backticks in yellow ANSI coloring.
 fn format_inline(line: String) -> String {
   // Splitting by "`" means every alternating item is inside backticks!
   let parts = string.split(line, on: "`")
   do_format_inline(parts, False, "")
 }
 
+/// Recursively alternates between standard text and yellow ANSI text 
+/// based on the backtick split boundaries.
 fn do_format_inline(parts: List(String), is_code: Bool, acc: String) -> String {
   case parts {
     [] -> acc
