@@ -73,12 +73,12 @@ pub type ShellState {
 /// 4. Places the terminal into raw mode and starts the recursive REPL loop.
 pub fn main() -> Nil {
   // 1. Clean up any orphaned `gsh_eval_X.gleam` files from previous crashes
-  case simplifile.read_directory("test") {
+  case simplifile.read_directory("src") {
     Ok(files) -> {
       list.each(files, fn(file) {
         case string.starts_with(file, "gsh_eval_") {
           True -> {
-            let _ = simplifile.delete("test/" <> file)
+            let _ = simplifile.delete("src/" <> file)
             Nil
           }
           False -> Nil

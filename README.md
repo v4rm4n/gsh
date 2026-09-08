@@ -6,18 +6,30 @@
 > GSH is an interactive REPL for the [Gleam Programming Language](https://gleam.run/) written in Gleam and Erlang.
 
 ## Latest Bugfixes
-- **Zero-Collision Dynamic Runtime:** Replaced static file evaluations with dynamically generated, prompt-indexed modules (`gsh_eval_X.gleam`), eliminating BEAM bytecode caching conflicts and stale memory state across evaluation loops.
-- **Masked Internal Evaluator Traces:** Updated error formatting (`hide_internal_path`) to strip dynamic generator file paths from Gleam compiler errors and stack traces, cleanly replacing them with a native `REPL` origin identifier.
-- **Elixir-Style In-REPL Documentation Engine:** Introduced `h <module>` and `h <module.function>` inspection powered by a live `glexer` tokenization pipeline, rendering ANSI-highlighted markdown documentation and type signatures directly in the terminal.
-- **Dynamic Variable Shadowing & Pattern Destructuring:** Re-engineered variable binding extraction to track single assignments (`let x = 1`) and complex pattern destructuring (`let #(a, b) = pair`), preserving accurate variable scope across evaluations.
-- **Spurious Warning Suppression & Cleanup:** Optimized module generation headers (`source.header`) to eliminate unused import/formatter compiler warnings and guaranteed immediate disk cleanup of temporary evaluation files.
+### Latency & Type Resolution (Hot/Cold Path)
+- **Replaced Subprocess Overhead:** Gated gleam export package-interface calls behind needs_export (`is_import` || `is_type` || `is_function`). This eliminated the synchronous **~250ms** CLI process on standard expressions, bringing Hot Path evaluation down to **~20ms**.
+- **Added Fast Fallback Inference:** Implemented `infer_or_get_type` in types.gleam to instantly parse primitives (`Int`, `Float`, `Bool`, `String`), operators, and custom constructors locally without spawning an OS shell.
+
+### Compiler Directory & Path Scrubbing
+- **Replaced File Location (test/ $\rightarrow$ src/):** Moved temporary `gsh_eval_X.gleam` outputs to `src/` so the compiler includes them in `package_interface.json`.
+- **Cleaned Up Output Scrubbing:** Updated `formatter.gleam` to strip `./src/` path prefixes from compiler error traces (rendering as `REPL:line:col`), and updated startup sweeps in `gsh.gleam` to purge leftover orphan files from `src/`.
+
+### Terminal Rendering & Output Alignment
+- **Eliminated Blank Line Bugs:** Updated debug_output formatting logic in ` evaluator.gleam` so `"\n"` isn't concatenated when debug mode is disabled.
+
+### Error Formatting & Decoder Fixes
+- **Dev Dependency Warning Suppressor:** Added `filter_dev_dep_errors` to `formatter.gleam` to strip out compiler warnings triggered when dynamic `src/` application modules import internal gsh runtime packages.
+
+- **Aligned Decoder Error Types:** Replaced `Nil` mismatch errors in `runner.gleam` with `simplifile.FileError` types to ensure compiler type parity across disk reads.
 
 ## Installation
-Add `gsh` to your project as a development dependency:
+Add `gsh` to your project as a dependency:
 
 ```bash
-gleam add gsh --dev
+gleam add gsh
 ```
+
+> ⚠ This was previously `gleam add gsh --dev` ⚠
 
 ## Usage
 `gsh` can either be used as a standalone REPL or a live-app bootloader.
@@ -34,15 +46,15 @@ gleam run -m gsh -- my_app worker_pool bg_module_1
 
 ## Built-in Commands
 GSH includes several built-in commands to manage your session:
-- `h()` - Show the help menu
-- `v()` - Show the current GSH version
-- `l()` - List all currently active variable bindings
-- `history()` - Show the history of executed commands
-- `compile` - Recompile the host Gleam project without leaving the shell
-- `clear` - Clear the terminal screen (or Ctrl + L)
+- `:h` - Show the help menu
+- `:v` - Show the current GSH version
+- `:b` - List all currently active variable bindings
+- `:hs` - Show the history of executed commands
+- `:cc` - Recompile the host Gleam project without leaving the shell
+- `:c` - Clear the terminal screen (or Ctrl + L)
 - `pid()` - Create a pid from a string (e.g. pid("<0.34.0>"))
-- `h <module/function>` - Retrieve module/function documentation
-- `k()` - Exit the shell
+- `:h <module/function>` - Retrieve module/function documentation
+- `:q` - Exit the shell
 
 ## Target limitations
 > **Note:** GSH is heavily tied to the Erlang VM (BEAM) for state persistence and dynamic evaluation. It **does not** support the JavaScript target.

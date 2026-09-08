@@ -15,8 +15,11 @@ import gsh/evaluator/formatter
 import gsh/evaluator/result.{
   type Evaluation, CompileError, Evaluation, NoError, RuntimeError,
 }
+import gsh/evaluator/style
+import gsh/evaluator/types
 import gsh/runtime/runtime
 import shellout
+import simplifile
 
 /// Filters whether a successfully evaluated binding should be persisted into 
 /// the shell's active state.
@@ -34,7 +37,15 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
 /// to rebuild their background application and trigger Erlang VM hot-reloads 
 /// without dropping their active shell session.
 pub fn build_project() -> Result(String, #(Int, String)) {
-  shellout.command(run: "gleam", with: ["build"], in: ".", opt: [])
+  shellout.command(
+    run: "gleam",
+    with: ["build"],
+    in: ".",
+    // Force Gleam to output ANSI color codes!
+    opt: [
+      shellout.SetEnvironment([#("FORCE_COLOR", "1"), #("CLICOLOR_FORCE", "1")]),
+    ],
+  )
 }
 
 /// The core execution pipeline for evaluated code.
@@ -47,14 +58,22 @@ pub fn build_project() -> Result(String, #(Int, String)) {
 ///    native compiler FFI to compile it directly into RAM, bypassing `.beam` disk I/O.
 /// 3. **Execution:** Invokes the dynamically loaded `gsh_entry` function, capturing 
 ///    the evaluation success or gracefully intercepting Erlang VM runtime crashes.
-pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
-  // 1. Output to a dedicated directory ('gsh_eval') so 'gsh' metadata isn't nuked in --lib
+pub fn run(
+  binding: Option(Binding),
+  module_name: String,
+  source_input: String,
+  needs_export: Bool,
+) -> Evaluation {
   let args = [
     "compile-package", "--target", "erlang", "--package", ".", "--out",
     "build/dev/erlang/gsh_eval", "--lib", "build/dev/erlang", "--no-beam",
   ]
 
-  case shellout.command(run: "gleam", with: args, in: ".", opt: []) {
+  case
+    shellout.command(run: "gleam", with: args, in: ".", opt: [
+      shellout.SetEnvironment([#("FORCE_COLOR", "1"), #("CLICOLOR_FORCE", "1")]),
+    ])
+  {
     Error(#(_status, output)) ->
       Evaluation(
         output: formatter.format_error(output),
@@ -67,16 +86,48 @@ pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
       )
 
     Ok(_) -> {
-      // 2. Read the generated .erl file from the isolated gsh_eval build directory
       let erl_path =
         "build/dev/erlang/gsh_eval/_gleam_artefacts/" <> module_name <> ".erl"
 
       case runtime.compile_and_load(erl_path, module_name) {
         Ok(_) -> {
           case runtime.run_entry(module_name, "gsh_entry") {
-            Ok(_) ->
+            Ok(_) -> {
+              let interface_path =
+                "build/dev/erlang/gsh_eval/package_interface.json"
+
+              // Only trigger 200ms CLI export on structural definitions (type, import, fn)
+              let _ = case needs_export {
+                True ->
+                  shellout.command(
+                    run: "gleam",
+                    with: [
+                      "export",
+                      "package-interface",
+                      "--out",
+                      interface_path,
+                    ],
+                    in: ".",
+                    opt: [],
+                  )
+                False -> Ok("")
+              }
+
+              let json_str = case simplifile.read(interface_path) {
+                Ok(s) -> s
+                Error(_) -> ""
+              }
+
+              let type_suffix = case
+                types.infer_or_get_type(json_str, module_name, source_input)
+              {
+                Ok("Nil") -> ""
+                Ok(t) -> style.type_note(" : " <> t)
+                Error(_) -> ""
+              }
+
               Evaluation(
-                output: "",
+                output: type_suffix <> "\n",
                 success: True,
                 error_kind: NoError,
                 new_binding: persist_binding(binding),
@@ -84,6 +135,7 @@ pub fn run(binding: Option(Binding), module_name: String) -> Evaluation {
                 new_type: None,
                 new_function: None,
               )
+            }
 
             Error(err) ->
               Evaluation(

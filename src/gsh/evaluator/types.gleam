@@ -1,0 +1,185 @@
+import gleam/dynamic/decode
+import gleam/float
+import gleam/int
+import gleam/json
+import gleam/list
+import gleam/string
+
+pub type TypeNode {
+  Named(name: String, parameters: List(TypeNode))
+  Tuple(elements: List(TypeNode))
+  Variable(id: Int)
+  Fn(params: List(TypeNode), ret: TypeNode)
+}
+
+pub fn type_node_decoder() -> decode.Decoder(TypeNode) {
+  use kind <- decode.field("kind", decode.string)
+
+  case kind {
+    "named" -> {
+      use name <- decode.field("name", decode.string)
+      use parameters <- decode.field(
+        "parameters",
+        decode.list(type_node_decoder()),
+      )
+      decode.success(Named(name:, parameters:))
+    }
+    "tuple" -> {
+      use elements <- decode.field("elements", decode.list(type_node_decoder()))
+      decode.success(Tuple(elements:))
+    }
+    "variable" -> {
+      use id <- decode.field("id", decode.int)
+      decode.success(Variable(id:))
+    }
+    "fn" -> {
+      use params <- decode.field("parameters", decode.list(type_node_decoder()))
+      use ret <- decode.field("return", type_node_decoder())
+      decode.success(Fn(params:, ret:))
+    }
+    _ -> decode.success(Variable(-1))
+  }
+}
+
+pub fn render(node: TypeNode) -> String {
+  case node {
+    Named(name, []) -> name
+    Named(name, params) -> {
+      let rendered_params = list.map(params, render) |> string.join(", ")
+      name <> "(" <> rendered_params <> ")"
+    }
+    Tuple(elements) -> {
+      let rendered = list.map(elements, render) |> string.join(", ")
+      "#(" <> rendered <> ")"
+    }
+    Variable(id) -> "a_" <> int.to_string(id)
+    Fn(params, ret) -> {
+      let rendered_params = list.map(params, render) |> string.join(", ")
+      "fn(" <> rendered_params <> ") -> " <> render(ret)
+    }
+  }
+}
+
+pub fn get_entry_type(
+  json_string: String,
+  module_name: String,
+) -> Result(String, String) {
+  let decoder =
+    decode.at(
+      ["modules", module_name, "functions", "gsh_entry", "return"],
+      type_node_decoder(),
+    )
+
+  case json.parse(json_string, decoder) {
+    Ok(node) -> Ok(render(node))
+    Error(err) -> Error(string.inspect(err))
+  }
+}
+
+/// Attempts to retrieve the entry type from the exported package interface JSON,
+/// falling back to fast pattern inference on expression literals and custom constructors.
+pub fn infer_or_get_type(
+  json_string: String,
+  module_name: String,
+  source_input: String,
+) -> Result(String, Nil) {
+  case get_entry_type(json_string, module_name) {
+    Ok(t) -> Ok(t)
+    Error(_) -> infer_type_from_input(source_input, json_string)
+  }
+}
+
+fn infer_type_from_input(
+  input: String,
+  json_string: String,
+) -> Result(String, Nil) {
+  let trimmed = string.trim(input)
+
+  let expr = case string.split_once(trimmed, " = ") {
+    Ok(#(_lhs, rhs)) -> string.trim(rhs)
+    Error(_) -> trimmed
+  }
+
+  case int.parse(expr) {
+    Ok(_) -> Ok("Int")
+    Error(_) ->
+      case float.parse(expr) {
+        Ok(_) -> Ok("Float")
+        Error(_) ->
+          case expr {
+            "True" | "False" -> Ok("Bool")
+            _ -> infer_complex_expression(expr, json_string)
+          }
+      }
+  }
+}
+
+fn infer_complex_expression(
+  expr: String,
+  json_string: String,
+) -> Result(String, Nil) {
+  case string.starts_with(expr, "\"") {
+    True -> Ok("String")
+    False ->
+      case
+        string.contains(expr, "+.")
+        || string.contains(expr, "-.")
+        || string.contains(expr, "*.")
+        || string.contains(expr, "/.")
+      {
+        True -> Ok("Float")
+        False ->
+          case
+            string.contains(expr, "+")
+            || string.contains(expr, "-")
+            || string.contains(expr, "*")
+            || string.contains(expr, "/")
+            || string.contains(expr, "%")
+          {
+            True -> Ok("Int")
+            False ->
+              case string.contains(expr, "<>") {
+                True -> Ok("String")
+                False ->
+                  case
+                    string.contains(expr, "==")
+                    || string.contains(expr, "!=")
+                    || string.contains(expr, "&&")
+                    || string.contains(expr, "||")
+                  {
+                    True -> Ok("Bool")
+                    False -> lookup_custom_type(expr, json_string)
+                  }
+              }
+          }
+      }
+  }
+}
+
+fn lookup_custom_type(
+  expr: String,
+  json_string: String,
+) -> Result(String, Nil) {
+  let constructor = case string.split_once(expr, "(") {
+    Ok(#(head, _)) -> string.trim(head)
+    Error(_) -> expr
+  }
+
+  case string.is_empty(constructor) {
+    True -> Error(Nil)
+    False ->
+      case string.contains(json_string, "\"" <> constructor <> "\"") {
+        True -> {
+          case string.split_once(json_string, "\"name\":\"") {
+            Ok(#(_, rest)) ->
+              case string.split_once(rest, "\"") {
+                Ok(#(type_name, _)) -> Ok(type_name)
+                Error(_) -> Error(Nil)
+              }
+            Error(_) -> Error(Nil)
+          }
+        }
+        False -> Error(Nil)
+      }
+  }
+}

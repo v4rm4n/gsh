@@ -25,6 +25,7 @@ import gsh/evaluator/parser
 import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation, NoError}
 import gsh/evaluator/runner
 import gsh/evaluator/source
+import gsh/evaluator/style
 import gsh/runtime/runtime
 import simplifile
 
@@ -49,13 +50,15 @@ pub fn evaluate(
   prompt_count: Int,
 ) -> Evaluation {
   let module_name = "gsh_eval_" <> int.to_string(prompt_count)
-  let evaluator_path = "test/" <> module_name <> ".gleam"
+  let evaluator_path = "src/" <> module_name <> ".gleam"
   let input = string.trim(input)
 
   case parser.parse(input) {
     parser.ClassifyIncomplete -> {
       Evaluation(
-        output: "error: Syntax error\n  Incomplete input (missing closing delimiter).\n",
+        output: style.error(
+          "error: Syntax error\n  Incomplete input (missing closing delimiter).\n",
+        ),
         success: False,
         error_kind: CompileError,
         new_binding: None,
@@ -66,7 +69,7 @@ pub fn evaluate(
     }
     parser.ClassifyError(msg) -> {
       Evaluation(
-        output: "error: " <> msg <> "\n",
+        output: style.error("error: " <> msg <> "\n"),
         success: False,
         error_kind: CompileError,
         new_binding: None,
@@ -183,10 +186,12 @@ pub fn evaluate(
       case simplifile.write(to: evaluator_path, contents: source) {
         Ok(_) -> {
           let start_time = runtime.system_time()
-          let result = runner.run(parsed_binding, module_name)
+          let needs_export = is_import || is_type || is_function
+          let result =
+            runner.run(parsed_binding, module_name, input, needs_export)
           let elapsed_us = runtime.system_time() - start_time
 
-          // Delete the specific dynamic file!
+          // Delete the dynamic file
           let _ = simplifile.delete(evaluator_path)
 
           let debug_output = case debug {
@@ -224,12 +229,15 @@ pub fn evaluate(
             _, _, _, _ -> result
           }
 
-          Evaluation(..eval, output: debug_output <> eval.output)
+          case debug_output {
+            "" -> Evaluation(..eval, output: eval.output)
+            _ -> Evaluation(..eval, output: eval.output <> debug_output)
+          }
         }
 
         Error(_) ->
           Evaluation(
-            output: "GSH could not write evaluator file.\n",
+            output: style.error("error: GSH could not write evaluator file.\n"),
             success: False,
             error_kind: CompileError,
             new_binding: None,
@@ -336,7 +344,6 @@ fn make_import_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  // Combine the new import with the historical ones
   let all_imports = list.append(imports, [new_import])
 
   source.header(False, False)
@@ -370,7 +377,8 @@ fn make_expression_source(
   <> expression
   <> "\n"
   <> "  }\n"
-  <> "  terminal.println(gsh_internal_formatter.format_output(gsh_internal_string.inspect(gsh_internal_expr)))\n"
+  <> "  terminal.print(gsh_internal_formatter.format_output(gsh_internal_string.inspect(gsh_internal_expr)))\n"
+  <> "  gsh_internal_expr\n"
   <> "}\n"
 }
 
@@ -398,16 +406,19 @@ fn make_normal_binding_source(
 ) -> String {
   case binding.names {
     [name] ->
-      source.header(True, False)
+      source.header(True, True)
       <> imports_source(imports)
       <> types_source(types)
       <> functions_source(functions)
       <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
       <> generate_current_binding(binding)
-      <> "  terminal.println(gsh_internal_string.inspect("
+      <> "  terminal.print(gsh_internal_formatter.format_output(gsh_internal_string.inspect("
       <> name
-      <> "))\n"
+      <> ")))\n"
+      <> "  "
+      <> name
+      <> "\n"
       <> "}\n"
 
     _ ->
@@ -429,7 +440,7 @@ fn make_complex_binding_source(
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> generate_current_binding(binding)
-  <> "  terminal.println(\"ok\")\n"
+  <> "  terminal.print(\"ok\")\n"
   <> "}\n"
 }
 
@@ -447,7 +458,7 @@ fn make_assert_source(
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> generate_current_binding(binding)
-  <> "  terminal.println(\"ok\")\n"
+  <> "  terminal.print(\"ok\")\n"
   <> "}\n"
 }
 

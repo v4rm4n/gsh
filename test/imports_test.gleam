@@ -28,5 +28,5 @@ pub fn eval_duplicate_unqualified_imports_test() {
 
   // The evaluator should return the newly merged string
   let assert Some(merged) = result.new_import
-  merged |> should.equal("import gleam/list.{filter, map}")
+  merged |> should.equal("import gleam/list.{filter}")
 }

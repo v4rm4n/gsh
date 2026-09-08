@@ -59,15 +59,15 @@ fn hide_internal_path(output: String) -> String {
   |> list.map(fn(line) {
     case string.split_once(line, on: "gsh_eval_") {
       Ok(#(before, after)) -> {
-        // Strip out the "./test/" directory prefix
-        case string.split_once(before, on: "┌─ ") {
-          Ok(#(padding, _path_prefix)) -> {
-            // Strip out the dynamic prompt ID and extension
-            case string.split_once(after, on: ".gleam") {
-              Ok(#(_id, rest)) -> padding <> "┌─ REPL" <> rest
-              Error(_) -> line
-            }
-          }
+        // Safely strip the directory prefix regardless of ANSI codes
+        let clean_before =
+          before
+          |> string.replace("./src/", "")
+          |> string.replace("src/", "")
+
+        // Drop the dynamic ID and extension
+        case string.split_once(after, on: ".gleam") {
+          Ok(#(_id, rest)) -> clean_before <> "REPL" <> rest
           Error(_) -> line
         }
       }
@@ -114,35 +114,49 @@ fn filter_warning_lines(
 
 /// Checks if a string line matches the standard format of a Gleam compiler warning.
 fn is_warning_header(line: String) -> Bool {
-  // Gleam compiler warnings typically look like:
-  // "path/to/file.gleam:line:col: Warning: message
-  string.contains(line, "Warning:") || string.starts_with(line, "warning:")
+  let clean = strip_ansi(line) |> string.lowercase
+  string.starts_with(clean, "warning:")
 }
 
 /// A heuristic whitelist function that attempts to detect when a compiler warning 
 /// block has ended and the actual stdout or result data has begun.
 fn is_runtime_output(line: String) -> Bool {
-  let line = string.trim(line)
+  let clean = strip_ansi(line) |> string.trim
 
-  case int.parse(line) {
+  case int.parse(clean) {
     Ok(_) -> True
-
     Error(_) ->
-      line == "True"
-      || line == "False"
-      // Whitelist successful asserts
-      || line == "ok"
-      || string.starts_with(line, "\"")
-      || string.starts_with(line, "#(")
-      || string.starts_with(line, "{")
-      || string.starts_with(line, "[")
-      || string.starts_with(line, "//fn")
-      || string.starts_with(line, "fn(")
-      || string.starts_with(line, "Ok(")
-      || string.starts_with(line, "Error(")
-      // Use contains() to bypass ANSI codes
-      || string.starts_with(line, "error:")
-      // Use contains() to bypass ANSI codes
-      || string.starts_with(line, "runtime error:")
+      clean == "True"
+      || clean == "False"
+      || clean == "ok"
+      || string.starts_with(clean, "\"")
+      || string.starts_with(clean, "#(")
+      || string.starts_with(clean, "{")
+      || string.starts_with(clean, "[")
+      || string.starts_with(clean, "//fn")
+      || string.starts_with(clean, "fn(")
+      || string.starts_with(clean, "Ok(")
+      || string.starts_with(clean, "Error(")
+      || string.starts_with(clean, "error:")
+      || string.starts_with(clean, "runtime error:")
+  }
+}
+
+/// Safely strips all ANSI escape codes from a string so we can reliably 
+/// perform text matching without colors breaking the comparisons.
+fn strip_ansi(text: String) -> String {
+  strip_ansi_loop(text, "")
+}
+
+fn strip_ansi_loop(remaining: String, acc: String) -> String {
+  case string.split_once(remaining, "\u{001b}[") {
+    Ok(#(before, after)) -> {
+      case string.split_once(after, "m") {
+        Ok(#(_codes, rest)) -> strip_ansi_loop(rest, acc <> before)
+        Error(_) -> acc <> remaining
+        // Malformed ANSI fallback
+      }
+    }
+    Error(_) -> acc <> remaining
   }
 }
