@@ -377,12 +377,18 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             option.None -> state.bindings
           }
 
-          // Filter out shadowed variable bindings
+          // Only prune an old binding if it was shadowed AND the new input doesn't read it on the RHS
           let base_bindings = case defined_names {
             [] -> current_bindings
             _ ->
               list.filter(current_bindings, fn(b) {
-                list.any(b.names, fn(n) { !list.contains(defined_names, n) })
+                list.any(b.names, fn(n) {
+                  let is_rebound = list.contains(defined_names, n)
+                  let is_self_referenced = string.contains(input, n)
+
+                  // Keep the old binding if it is self-referenced (e.g. `let x = f(x)`)
+                  !is_rebound || is_self_referenced
+                })
               })
           }
           let bindings = case result.new_binding {

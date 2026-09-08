@@ -6,6 +6,7 @@ import gleam/float
 import gleam/int
 import gleam/json
 import gleam/list
+import gleam/result
 import gleam/string
 
 pub type TypeNode {
@@ -200,37 +201,70 @@ fn infer_complex_expression(
   expr: String,
   json_string: String,
 ) -> Result(String, Nil) {
-  case string.starts_with(expr, "\"") {
+  // Strip syntax arrows so `-` doesn't match `->` or `<-`
+  let clean_expr =
+    expr
+    |> string.replace("->", " ")
+    |> string.replace("<-", " ")
+
+  // Extract the last non-empty line (the return value of block/case statements)
+  let last_line =
+    clean_expr
+    |> string.split("\n")
+    |> list.map(string.trim)
+    |> list.filter(fn(l) { l != "" && l != "}" })
+    |> list.last
+    |> result.unwrap(clean_expr)
+
+  case
+    string.starts_with(last_line, "\"") || string.ends_with(last_line, "\"")
+  {
     True -> Ok("String")
     False ->
-      case
-        string.contains(expr, "+.")
-        || string.contains(expr, "-.")
-        || string.contains(expr, "*.")
-        || string.contains(expr, "/.")
-      {
-        True -> Ok("Float")
+      case last_line == "True" || last_line == "False" {
+        True -> Ok("Bool")
         False ->
-          case
-            string.contains(expr, "+")
-            || string.contains(expr, "-")
-            || string.contains(expr, "*")
-            || string.contains(expr, "/")
-            || string.contains(expr, "%")
-          {
-            True -> Ok("Int")
-            False ->
-              case string.contains(expr, "<>") {
-                True -> Ok("String")
-                False ->
+          case int.parse(last_line) {
+            Ok(_) -> Ok("Int")
+            Error(_) ->
+              case float.parse(last_line) {
+                Ok(_) -> Ok("Float")
+                Error(_) ->
                   case
-                    string.contains(expr, "==")
-                    || string.contains(expr, "!=")
-                    || string.contains(expr, "&&")
-                    || string.contains(expr, "||")
+                    string.contains(clean_expr, "+.")
+                    || string.contains(clean_expr, "-.")
+                    || string.contains(clean_expr, "*.")
+                    || string.contains(clean_expr, "/.")
                   {
-                    True -> Ok("Bool")
-                    False -> lookup_in_package_interface(expr, json_string)
+                    True -> Ok("Float")
+                    False ->
+                      case
+                        string.contains(clean_expr, "+")
+                        || string.contains(clean_expr, "-")
+                        || string.contains(clean_expr, "*")
+                        || string.contains(clean_expr, "/")
+                        || string.contains(clean_expr, "%")
+                      {
+                        True -> Ok("Int")
+                        False ->
+                          case string.contains(clean_expr, "<>") {
+                            True -> Ok("String")
+                            False ->
+                              case
+                                string.contains(clean_expr, "==")
+                                || string.contains(clean_expr, "!=")
+                                || string.contains(clean_expr, "&&")
+                                || string.contains(clean_expr, "||")
+                              {
+                                True -> Ok("Bool")
+                                False ->
+                                  lookup_in_package_interface(
+                                    last_line,
+                                    json_string,
+                                  )
+                              }
+                          }
+                      }
                   }
               }
           }

@@ -55,9 +55,8 @@ pub fn parse(src: String) -> ClassifyResult {
   }
 }
 
-// 3. Extracting top-level definitions (Functions, Types, Imports)
+// 3. Extracting top-level definitions (Functions, Types, Imports, Type Aliases)
 fn from_module(src: String, module: glance.Module) -> ClassifyResult {
-  // ADD THIS BLOCK:
   let imports =
     list.map(module.imports, fn(def) {
       ImportItem(module: def.definition.module, source: src)
@@ -68,12 +67,19 @@ fn from_module(src: String, module: glance.Module) -> ClassifyResult {
       DefinitionItem(name: def.definition.name, kind: FnDef, source: src)
     })
 
-  let types =
+  let custom_types =
     list.map(module.custom_types, fn(def) {
       DefinitionItem(name: def.definition.name, kind: TypeDef, source: src)
     })
 
-  // ADD `imports` to the flatten list:
+  // Extract type aliases (e.g., `pub type IpCache = table.Table(...)`)
+  let type_aliases =
+    list.map(module.type_aliases, fn(def) {
+      DefinitionItem(name: def.definition.name, kind: TypeDef, source: src)
+    })
+
+  let types = list.append(custom_types, type_aliases)
+
   let items = list.flatten([imports, functions, types])
   case items {
     [] -> parse_wrapped_expression(src)
