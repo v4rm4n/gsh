@@ -8,9 +8,9 @@
 
 // src/gsh/evaluator/runner.gleam
 
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option, None}
 import gleam/string
-import gsh/evaluator/binding.{type Binding, Let, LetAssert}
+import gsh/evaluator/binding.{type Binding}
 import gsh/evaluator/formatter
 import gsh/evaluator/result.{
   type Evaluation, CompileError, Evaluation, NoError, RuntimeError,
@@ -25,15 +25,7 @@ import shellout
 /// pattern matches are intentionally discarded. This prevents complex, 
 /// fallible destructuring from polluting the REPL's persistent variable cache.
 fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
-  case binding {
-    Some(binding) ->
-      case binding.kind {
-        Let -> Some(binding)
-        LetAssert -> None
-      }
-
-    None -> None
-  }
+  binding
 }
 
 /// Triggers a full compilation of the host workspace using the Gleam CLI.

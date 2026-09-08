@@ -28,6 +28,7 @@ import gsh/command/router as command
 import gsh/evaluator/binding
 import gsh/evaluator/docs
 import gsh/evaluator/evaluator
+import gsh/evaluator/parser
 import gsh/evaluator/runner
 import gsh/input/buffer
 import gsh/input/editor
@@ -355,13 +356,18 @@ fn handle_input(input: String, state: ShellState) -> Nil {
           // Re-enter raw mode for the next REPL prompt
           let assert Ok(_) = tty.enter_raw()
 
-          // Identify all names just created (variables or functions)
+          // Identify all names just created (variables, functions, OR imports!)
           let defined_names = case result.new_binding {
             option.Some(b) -> b.names
             option.None ->
               case result.new_function {
                 option.Some(f) -> [f.0]
-                option.None -> []
+                option.None ->
+                  // ADD THIS BRANCH:
+                  case result.new_import {
+                    option.Some(imp) -> parser.get_imported_names(imp)
+                    option.None -> []
+                  }
               }
           }
 

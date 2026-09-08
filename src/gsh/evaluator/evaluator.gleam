@@ -18,12 +18,11 @@
 
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleam/string
-import glexer
-import glexer/token
 import gsh/evaluator/binding.{type Binding, Binding, Let, LetAssert}
-import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation}
+import gsh/evaluator/parser
+import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation, NoError}
 import gsh/evaluator/runner
 import gsh/evaluator/source
 import gsh/runtime/runtime
@@ -51,40 +50,12 @@ pub fn evaluate(
 ) -> Evaluation {
   let module_name = "gsh_eval_" <> int.to_string(prompt_count)
   let evaluator_path = "test/" <> module_name <> ".gleam"
-
   let input = string.trim(input)
 
-  // 1. Run the lexer and get ALL tokens (including comments and errors)
-  let raw_tokens =
-    glexer.new(input)
-    |> glexer.lex()
-    |> list.map(fn(tuple) { tuple.0 })
-
-  // 2. Check if the user left a string open or typed a bad character
-  let lex_error =
-    list.find(raw_tokens, fn(t) {
-      case t {
-        token.UnterminatedString(_) | token.UnexpectedGrapheme(_) -> True
-        _ -> False
-      }
-    })
-
-  case lex_error {
-    Ok(token.UnterminatedString(_)) -> {
+  case parser.parse(input) {
+    parser.ClassifyIncomplete -> {
       Evaluation(
-        output: "error: Syntax error\n  The string was left open.\n",
-        success: False,
-        error_kind: CompileError,
-        // Reverted from IncompleteInput
-        new_binding: None,
-        new_import: None,
-        new_type: None,
-        new_function: None,
-      )
-    }
-    Ok(token.UnexpectedGrapheme(g)) -> {
-      Evaluation(
-        output: "error: Syntax error\n  Unexpected grapheme: " <> g <> "\n",
+        output: "error: Syntax error\n  Incomplete input (missing closing delimiter).\n",
         success: False,
         error_kind: CompileError,
         new_binding: None,
@@ -93,47 +64,79 @@ pub fn evaluate(
         new_function: None,
       )
     }
-    _ -> {
-      // 1. Filter out comments AND spaces so we only route based on actual syntax
-      let tokens =
-        list.filter(raw_tokens, fn(t) {
-          case t {
-            token.CommentNormal(_)
-            | token.CommentDoc(_)
-            | token.CommentModule(_)
-            | token.Space(_) -> False
-            _ -> True
+    parser.ClassifyError(msg) -> {
+      Evaluation(
+        output: "error: " <> msg <> "\n",
+        success: False,
+        error_kind: CompileError,
+        new_binding: None,
+        new_import: None,
+        new_type: None,
+        new_function: None,
+      )
+    }
+    parser.ClassifyEmpty | parser.Items([]) -> {
+      Evaluation("", True, NoError, None, None, None, None)
+    }
+    parser.Items([item, ..]) -> {
+      // Map the AST item back to your existing boolean flags and records
+      let #(
+        is_import,
+        is_type,
+        is_function,
+        _is_binding,
+        parsed_binding,
+        parsed_def_name,
+      ) = case item {
+        parser.ImportItem(_, _) -> #(True, False, False, False, None, None)
+        parser.DefinitionItem(name, parser.TypeDef, _) -> #(
+          False,
+          True,
+          False,
+          False,
+          None,
+          Some(name),
+        )
+        parser.DefinitionItem(name, parser.FnDef, _) -> #(
+          False,
+          False,
+          True,
+          False,
+          None,
+          Some(name),
+        )
+        parser.DefinitionItem(name, parser.ConstDef, _) -> #(
+          False,
+          False,
+          False,
+          False,
+          None,
+          Some(name),
+        )
+        parser.ValueItem(names, _, is_assert) -> {
+          case names {
+            [] -> #(False, False, False, False, None, None)
+            // Raw expression
+            _ -> {
+              let kind = case is_assert {
+                True -> LetAssert
+                False -> Let
+              }
+              // Construct the old Binding record so your code generators don't break
+              let b =
+                Binding(
+                  kind: kind,
+                  source: input,
+                  pattern: "",
+                  // Not needed for generation
+                  names: names,
+                  value: "",
+                  // Not needed for generation
+                )
+              #(False, False, False, True, Some(b), None)
+            }
           }
-        })
-
-      // 2. Token-based routing
-      let #(is_import, is_type, is_function, is_binding) = case tokens {
-        [token.Import, ..] -> #(True, False, False, False)
-        [token.Pub, token.Type, ..] | [token.Type, ..] -> #(
-          False,
-          True,
-          False,
-          False,
-        )
-        [token.Pub, token.Fn, ..] | [token.Fn, ..] -> #(
-          False,
-          False,
-          True,
-          False,
-        )
-        [token.Let, ..] -> #(False, False, False, True)
-        _ -> #(False, False, False, False)
-      }
-
-      // 3. Extract the binding if it is one
-      let parsed_binding = case is_binding {
-        True -> parse_binding(input, tokens)
-        False -> None
-      }
-
-      let parsed_def_name = case is_type || is_function {
-        True -> extract_def_name(tokens)
-        False -> None
+        }
       }
 
       // 4. Generate the source
@@ -248,10 +251,7 @@ fn make_function_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  let pub_fn = case string.starts_with(new_fn, "pub ") {
-    True -> new_fn
-    False -> "pub " <> new_fn
-  }
+  let pub_fn = insert_pub(new_fn)
 
   source.header(False, False)
   <> imports_source(imports)
@@ -265,59 +265,18 @@ fn make_function_source(
   <> "}\n"
 }
 
-/// Parses a string like `let x = 5` into a structured `Binding` record, 
-/// separating the left-hand pattern from the right-hand value.
-fn parse_binding(source: String, tokens: List(token.Token)) -> Option(Binding) {
-  let #(kind, without_let) = case tokens {
-    [token.Let, token.Assert, ..] -> #(
-      LetAssert,
-      string.remove_prefix(from: source, matching: "let assert "),
-    )
-    _ -> #(Let, string.remove_prefix(from: source, matching: "let "))
-  }
-
-  let references = extract_names_from_tokens(tokens, [])
-
-  case string.split_once(without_let, on: "=") {
-    Ok(#(pattern, value)) -> {
-      Some(Binding(
-        kind: kind,
-        source: source,
-        pattern: string.trim(pattern),
-        names: references,
-        // Now passing the List
-        value: string.trim(value),
-      ))
-    }
-    Error(_) -> None
-  }
-}
-
-/// Scans the left side of an assignment to extract ALL bound variable names.
-fn extract_names_from_tokens(
-  tokens: List(token.Token),
-  acc: List(String),
-) -> List(String) {
-  case tokens {
-    [] | [token.Equal, ..] -> list.reverse(acc)
-
-    // Grab lowercase variable names!
-    [token.Name(name), ..rest] -> extract_names_from_tokens(rest, [name, ..acc])
-
-    // Ignore everything else
-    [_, ..rest] -> extract_names_from_tokens(rest, acc)
-  }
-}
-
 /// Injects the necessary hidden imports for the caching engine into the generated file.
 fn imports_source(imports: List(String)) -> String {
   let base =
     "import gsh/runtime/store as gsh_store\n"
     <> "import gsh/runtime/runtime as gsh_internal_runtime\n"
 
-  case imports {
+  // Pass the strings through the AST merger!
+  let merged = parser.merge_imports(imports)
+
+  case merged {
     [] -> base
-    _ -> base <> string.join(imports, "\n") <> "\n"
+    _ -> base <> string.join(merged, "\n") <> "\n"
   }
 }
 
@@ -356,10 +315,7 @@ fn make_type_source(
   types: List(String),
   functions: List(String),
 ) -> String {
-  let pub_type = case string.starts_with(new_type, "pub ") {
-    True -> new_type
-    False -> "pub " <> new_type
-  }
+  let pub_type = insert_pub(new_type)
 
   source.header(False, False)
   <> imports_source(imports)
@@ -380,11 +336,13 @@ fn make_import_source(
   types: List(String),
   functions: List(String),
 ) -> String {
+  // Combine the new import with the historical ones
+  let all_imports = list.append(imports, [new_import])
+
   source.header(False, False)
-  <> imports_source(imports)
+  <> imports_source(all_imports)
   <> types_source(types)
   <> functions_source(functions)
-  <> new_import
   <> "\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
@@ -557,12 +515,22 @@ fn build_capture_group(names: List(String)) -> String {
   }
 }
 
-fn extract_def_name(tokens: List(token.Token)) -> Option(String) {
-  case tokens {
-    [token.Pub, token.Fn, token.Name(name), ..] -> Some(name)
-    [token.Fn, token.Name(name), ..] -> Some(name)
-    [token.Pub, token.Type, token.UpperName(name), ..] -> Some(name)
-    [token.Type, token.UpperName(name), ..] -> Some(name)
-    _ -> None
+fn insert_pub(src: String) -> String {
+  insert_pub_loop(src, "")
+}
+
+fn insert_pub_loop(remaining: String, acc: String) -> String {
+  case remaining {
+    "pub " <> _ | "pub\n" <> _ -> acc <> remaining
+    "fn " <> _ | "fn\n" <> _ -> acc <> "pub " <> remaining
+    "type " <> _ | "type\n" <> _ -> acc <> "pub " <> remaining
+    "const " <> _ | "const\n" <> _ -> acc <> "pub " <> remaining
+    "opaque " <> _ -> acc <> "pub " <> remaining
+    "" -> acc
+    _ ->
+      case string.pop_grapheme(remaining) {
+        Ok(#(g, rest)) -> insert_pub_loop(rest, acc <> g)
+        Error(_) -> acc <> remaining
+      }
   }
 }
