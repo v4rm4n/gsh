@@ -21,6 +21,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gsh/evaluator/binding.{type Binding, Binding, Let, LetAssert}
+import gsh/evaluator/formatter
 import gsh/evaluator/parser
 import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation, NoError}
 import gsh/evaluator/runner
@@ -29,17 +30,6 @@ import gsh/evaluator/style
 import gsh/runtime/runtime
 import simplifile
 
-/// The primary orchestration engine for REPL input execution.
-/// 
-/// **Execution Pipeline:**
-/// 1. **Lexical Analysis:** Scans the raw string to intercept syntax errors (e.g., open strings) 
-///    and strips whitespace/comments to correctly route the syntax tree.
-/// 2. **Code Generation:** Passes the tokens to the appropriate source builder and recursively 
-///    injects the historical `ShellState` variables to maintain lexical scope.
-/// 3. **Compilation:** Writes the generated code to a unique file in `test/` and triggers 
-///    the `runner` for background compilation and VM execution.
-/// 4. **Cleanup & State:** Deletes the temporary file, calculates execution latency for debug 
-///    logs, and returns the extracted definitions so the REPL can update its active state.
 pub fn evaluate(
   input: String,
   bindings: List(Binding),
@@ -65,6 +55,7 @@ pub fn evaluate(
         new_import: None,
         new_type: None,
         new_function: None,
+        active_bindings: None,
       )
     }
     parser.ClassifyError(msg) -> {
@@ -76,13 +67,13 @@ pub fn evaluate(
         new_import: None,
         new_type: None,
         new_function: None,
+        active_bindings: None,
       )
     }
     parser.ClassifyEmpty | parser.Items([]) -> {
-      Evaluation("", True, NoError, None, None, None, None)
+      Evaluation("", True, NoError, None, None, None, None, None)
     }
     parser.Items([item, ..]) -> {
-      // Map the AST item back to your existing boolean flags and records
       let #(
         is_import,
         is_type,
@@ -119,22 +110,18 @@ pub fn evaluate(
         parser.ValueItem(names, _, is_assert) -> {
           case names {
             [] -> #(False, False, False, False, None, None)
-            // Raw expression
             _ -> {
               let kind = case is_assert {
                 True -> LetAssert
                 False -> Let
               }
-              // Construct the old Binding record so your code generators don't break
               let b =
                 Binding(
                   kind: kind,
                   source: input,
                   pattern: "",
-                  // Not needed for generation
                   names: names,
                   value: "",
-                  // Not needed for generation
                 )
               #(False, False, False, True, Some(b), None)
             }
@@ -142,58 +129,66 @@ pub fn evaluate(
         }
       }
 
-      // 4. Generate the source
-      let source = case is_import {
-        True -> make_import_source(input, bindings, imports, types, functions)
-        False ->
-          case is_type {
-            True -> make_type_source(input, bindings, imports, types, functions)
-            False ->
-              case is_function {
-                True ->
-                  make_function_source(
-                    input,
-                    bindings,
-                    imports,
-                    types,
-                    functions,
-                  )
-                False ->
-                  case parsed_binding {
-                    Some(binding) ->
-                      make_binding_source(
-                        binding,
-                        bindings,
-                        imports,
-                        types,
-                        functions,
-                      )
-                    None ->
-                      make_expression_source(
-                        input,
-                        bindings,
-                        imports,
-                        types,
-                        functions,
-                      )
-                  }
-              }
-          }
-      }
+      evaluate_loop(
+        input,
+        bindings,
+        imports,
+        types,
+        functions,
+        debug,
+        module_name,
+        evaluator_path,
+        parsed_binding,
+        parsed_def_name,
+        is_import,
+        is_type,
+        is_function,
+        False,
+      )
+    }
+  }
+}
 
-      let _ = simplifile.create_directory("test")
+fn evaluate_loop(
+  input: String,
+  bindings: List(Binding),
+  imports: List(String),
+  types: List(String),
+  functions: List(String),
+  debug: Bool,
+  module_name: String,
+  evaluator_path: String,
+  parsed_binding: option.Option(Binding),
+  parsed_def_name: option.Option(String),
+  is_import: Bool,
+  is_type: Bool,
+  is_function: Bool,
+  bindings_pruned: Bool,
+) -> Evaluation {
+  let source =
+    build_source(
+      input,
+      bindings,
+      imports,
+      types,
+      functions,
+      is_import,
+      is_type,
+      is_function,
+      parsed_binding,
+    )
+  let _ = simplifile.create_directory("test")
 
-      case simplifile.write(to: evaluator_path, contents: source) {
-        Ok(_) -> {
-          let start_time = runtime.system_time()
-          let needs_export = is_import || is_type || is_function
-          let result =
-            runner.run(parsed_binding, module_name, input, needs_export)
-          let elapsed_us = runtime.system_time() - start_time
+  case simplifile.write(to: evaluator_path, contents: source) {
+    Ok(_) -> {
+      let start_time = runtime.system_time()
+      let needs_export = is_import || is_type || is_function
+      let result = runner.run(parsed_binding, module_name, input, needs_export)
+      let elapsed_us = runtime.system_time() - start_time
+      let _ = simplifile.delete(evaluator_path)
 
-          // Delete the dynamic file
-          let _ = simplifile.delete(evaluator_path)
-
+      case result.success {
+        True -> {
           let debug_output = case debug {
             True -> {
               let ms = int.to_string(elapsed_us / 1000)
@@ -211,47 +206,140 @@ pub fn evaluate(
             False -> ""
           }
 
-          let eval = case is_import, is_type, is_function, result.success {
-            True, _, _, True ->
+          let eval = case is_import, is_type, is_function {
+            True, _, _ ->
               Evaluation(..result, new_import: Some(input), output: "")
-            _, True, _, True ->
+            _, True, _ ->
               Evaluation(
                 ..result,
                 new_type: option.map(parsed_def_name, fn(n) { #(n, input) }),
                 output: "",
               )
-            _, _, True, True ->
+            _, _, True ->
               Evaluation(
                 ..result,
                 new_function: option.map(parsed_def_name, fn(n) { #(n, input) }),
                 output: "",
               )
-            _, _, _, _ -> result
+            _, _, _ -> result
           }
 
-          case debug_output {
-            "" -> Evaluation(..eval, output: eval.output)
-            _ -> Evaluation(..eval, output: eval.output <> debug_output)
+          let updated_active = case bindings_pruned {
+            True -> Some(bindings)
+            False -> None
           }
+
+          let output = case debug_output {
+            "" -> eval.output
+            _ -> eval.output <> debug_output
+          }
+
+          Evaluation(..eval, output: output, active_bindings: updated_active)
         }
 
-        Error(_) ->
-          Evaluation(
-            output: style.error("error: GSH could not write evaluator file.\n"),
-            success: False,
-            error_kind: CompileError,
-            new_binding: None,
-            new_import: None,
-            new_type: None,
-            new_function: None,
-          )
+        False -> {
+          case result.error_kind {
+            CompileError -> {
+              // Check if a historical binding caused the compilation failure
+              case find_stale_binding(bindings, result.output) {
+                Some(stale_b) -> {
+                  let clean_bindings =
+                    list.filter(bindings, fn(b) { b != stale_b })
+                  evaluate_loop(
+                    input,
+                    clean_bindings,
+                    imports,
+                    types,
+                    functions,
+                    debug,
+                    module_name,
+                    evaluator_path,
+                    parsed_binding,
+                    parsed_def_name,
+                    is_import,
+                    is_type,
+                    is_function,
+                    True,
+                  )
+                }
+                None -> result
+              }
+            }
+            _ -> result
+          }
+        }
       }
     }
+
+    Error(_) ->
+      Evaluation(
+        output: style.error("error: GSH could not write evaluator file.\n"),
+        success: False,
+        error_kind: CompileError,
+        new_binding: None,
+        new_import: None,
+        new_type: None,
+        new_function: None,
+        active_bindings: None,
+      )
   }
 }
 
-/// Constructs the source code when the user defines a new function.
-/// Ensures the function is exposed as `pub` so it can be called in future evaluations.
+fn find_stale_binding(
+  bindings: List(Binding),
+  error_output: String,
+) -> option.Option(Binding) {
+  let clean_output = formatter.strip_ansi(error_output)
+  list.find(bindings, fn(b) {
+    b.source != "" && string.contains(clean_output, b.source)
+  })
+  |> option.from_result
+}
+
+fn build_source(
+  input: String,
+  bindings: List(Binding),
+  imports: List(String),
+  types: List(String),
+  functions: List(String),
+  is_import: Bool,
+  is_type: Bool,
+  is_function: Bool,
+  parsed_binding: option.Option(Binding),
+) -> String {
+  case is_import {
+    True -> make_import_source(input, bindings, imports, types, functions)
+    False ->
+      case is_type {
+        True -> make_type_source(input, bindings, imports, types, functions)
+        False ->
+          case is_function {
+            True ->
+              make_function_source(input, bindings, imports, types, functions)
+            False ->
+              case parsed_binding {
+                Some(binding) ->
+                  make_binding_source(
+                    binding,
+                    bindings,
+                    imports,
+                    types,
+                    functions,
+                  )
+                None ->
+                  make_expression_source(
+                    input,
+                    bindings,
+                    imports,
+                    types,
+                    functions,
+                  )
+              }
+          }
+      }
+  }
+}
+
 fn make_function_source(
   new_fn: String,
   bindings: List(Binding),
@@ -273,13 +361,11 @@ fn make_function_source(
   <> "}\n"
 }
 
-/// Injects the necessary hidden imports for the caching engine into the generated file.
 fn imports_source(imports: List(String)) -> String {
   let base =
     "import gsh/runtime/store as gsh_store\n"
     <> "import gsh/runtime/runtime as gsh_internal_runtime\n"
 
-  // Pass the strings through the AST merger!
   let merged = parser.merge_imports(imports)
 
   case merged {
@@ -304,8 +390,6 @@ fn types_source(types: List(String)) -> String {
   }
 }
 
-/// Injects previous custom functions, as well as the built-in `pid()` helper, 
-/// so they are available in the top-level scope of the evaluation.
 fn functions_source(functions: List(String)) -> String {
   let builtins =
     "pub fn pid(id: String) { gsh_internal_runtime.pid_from_string(id) }"
@@ -357,8 +441,6 @@ fn make_import_source(
   <> "}\n"
 }
 
-/// Generates the code for a raw expression (e.g., `1 + 1`).
-/// Evaluates the expression, inspects it to a string, and prints it.
 fn make_expression_source(
   expression: String,
   bindings: List(Binding),
@@ -462,8 +544,6 @@ fn make_assert_source(
   <> "}\n"
 }
 
-/// CURRENT BINDING: Generates exact raw code for pristine compiler errors, 
-/// then manually pushes the resulting variables into the cache.
 fn generate_current_binding(binding: Binding) -> String {
   let cache_key = "gsh_bind_" <> string.join(binding.names, "_")
   let capture = build_capture_group(binding.names)
@@ -478,7 +558,6 @@ fn generate_current_binding(binding: Binding) -> String {
   <> ")\n"
 }
 
-/// HISTORICAL BINDING: Safely restores previous variables from the cache.
 fn generate_historical_binding(binding: Binding) -> String {
   let cache_key = "gsh_bind_" <> string.join(binding.names, "_")
   let capture = build_capture_group(binding.names)
@@ -517,7 +596,6 @@ fn bindings_source_loop(bindings: List(Binding)) -> String {
   }
 }
 
-/// Builds a capture syntax for the bound variables (e.g., `x` or `#(a, b)`).
 fn build_capture_group(names: List(String)) -> String {
   case names {
     [] -> "Nil"

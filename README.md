@@ -3,24 +3,18 @@
 [![Package Version](https://img.shields.io/hexpm/v/gsh)](https://hex.pm/packages/gsh)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gsh/)
 
+Copyright 2026 v4rm4n
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at [here](http://www.apache.org/licenses/LICENSE-2.0).
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
 > GSH is an interactive REPL for the [Gleam Programming Language](https://gleam.run/) written in Gleam and Erlang.
-
-## Latest Bugfixes
-### Latency & Type Resolution (Hot/Cold Path)
-- **Replaced Subprocess Overhead:** Gated gleam export package-interface calls behind needs_export (`is_import` || `is_type` || `is_function`). This eliminated the synchronous **~250ms** CLI process on standard expressions, bringing Hot Path evaluation down to **~20ms**.
-- **Added Fast Fallback Inference:** Implemented `infer_or_get_type` in types.gleam to instantly parse primitives (`Int`, `Float`, `Bool`, `String`), operators, and custom constructors locally without spawning an OS shell.
-
-### Compiler Directory & Path Scrubbing
-- **Replaced File Location (test/ $\rightarrow$ src/):** Moved temporary `gsh_eval_X.gleam` outputs to `src/` so the compiler includes them in `package_interface.json`.
-- **Cleaned Up Output Scrubbing:** Updated `formatter.gleam` to strip `./src/` path prefixes from compiler error traces (rendering as `REPL:line:col`), and updated startup sweeps in `gsh.gleam` to purge leftover orphan files from `src/`.
-
-### Terminal Rendering & Output Alignment
-- **Eliminated Blank Line Bugs:** Updated debug_output formatting logic in ` evaluator.gleam` so `"\n"` isn't concatenated when debug mode is disabled.
-
-### Error Formatting & Decoder Fixes
-- **Dev Dependency Warning Suppressor:** Added `filter_dev_dep_errors` to `formatter.gleam` to strip out compiler warnings triggered when dynamic `src/` application modules import internal gsh runtime packages.
-
-- **Aligned Decoder Error Types:** Replaced `Nil` mismatch errors in `runner.gleam` with `simplifile.FileError` types to ensure compiler type parity across disk reads.
 
 ## Installation
 Add `gsh` to your project as a dependency:
@@ -97,6 +91,63 @@ After using Elixir's `iex`, OCaml's `utop` or even Rust's `evcxr`. I really want
 - Processes & built-ins (pid)
 ![proc_pid](demo/proc_pid.png)
 
+## Latest Bugfixes
+
+### State issues
+- **Automatic Stale Binding Pruning (:cc):** Fixed compilation failures after host-code hot-reloading where historical variable assignments referenced renamed or removed host functions. `evaluator.gleam` now intercepts compiler failures, isolates broken historical bindings, and purges them from session scope automatically.
+
+```gleam
+// Defined here
+gsh(7)> let resp = client.check_ip("8.8.8.8", ctx)
+Ok(Response(...)) : Result(Response(String), IpqsError)
+
+// check_ip --> renamed to --> do_check_ip
+
+gsh(20)> client.do_check_ip("8.8.8.8", ctx)
+error: Unknown module value
+   ┌─ REPL:26:23
+   │
+26 │     let resp = client.check_ip("8.8.8.8", ctx)
+   │                       ^^^^^^^^ Did you mean `do_check_ip`?
+
+The module `example/integrations/ipqs/client` does not have a `check_ip`
+value.
+```
+
+- **Lexical Scope Resynchronization:** Replaced manual state tracking with dynamic `active_bindings` propagation in `gsh.gleam`, ensuring session state stays synchronized across hot-code swaps without dropping active shell history.
+
+
+```gleam
+gsh(8)> client.do_check_ip("8.8.8.8", ctx)
+Ok(IpQualityScore(True, "Success", 0, "US", "California", "Mountain View", "Google DNS", False, "America/Los_Angeles", "dns.google", False, False, False, False, False, False, False, "N/A", 37.38999939, -122.06999969)) : Result(IpQualityScore, IpqsError)
+[debug] latency: 2119.150ms | bindings: 2 | imports: 3
+gsh(9)> :cc
+  Compiling t4z3r
+   Compiled in 0.22s
+
+// do_check_ip --> renamed to --> check_ip
+
+Ok (Imports hot-reloaded)
+gsh(10)> client.check_ip("8.8.8.8", ctx)
+Ok(IpQualityScore(True, "Success", 0, "US", "California", "Mountain View", "Google DNS", False, "America/Los_Angeles", "dns.google", False, False, False, False, False, False, False, "N/A", 37.38999939, -122.06999969))
+[debug] latency: 1847.289ms | bindings: 2 | imports: 3
+```
+
+### Latency & Type Resolution (Hot/Cold Path)
+- **Replaced Subprocess Overhead:** Gated gleam export package-interface calls behind needs_export (`is_import` || `is_type` || `is_function`). This eliminated the synchronous **~250ms** CLI process on standard expressions, bringing Hot Path evaluation down to **~20ms**.
+- **Added Fast Fallback Inference:** Implemented `infer_or_get_type` in types.gleam to instantly parse primitives (`Int`, `Float`, `Bool`, `String`), operators, and custom constructors locally without spawning an OS shell.
+
+### Compiler Directory & Path Scrubbing
+- **Replaced File Location (test/ $\rightarrow$ src/):** Moved temporary `gsh_eval_X.gleam` outputs to `src/` so the compiler includes them in `package_interface.json`.
+- **Cleaned Up Output Scrubbing:** Updated `formatter.gleam` to strip `./src/` path prefixes from compiler error traces (rendering as `REPL:line:col`), and updated startup sweeps in `gsh.gleam` to purge leftover orphan files from `src/`.
+
+### Terminal Rendering & Output Alignment
+- **Eliminated Blank Line Bugs:** Updated debug_output formatting logic in ` evaluator.gleam` so `"\n"` isn't concatenated when debug mode is disabled.
+
+### Error Formatting & Decoder Fixes
+- **Dev Dependency Warning Suppressor:** Added `filter_dev_dep_errors` to `formatter.gleam` to strip out compiler warnings triggered when dynamic `src/` application modules import internal gsh runtime packages.
+
+- **Aligned Decoder Error Types:** Replaced `Nil` mismatch errors in `runner.gleam` with `simplifile.FileError` types to ensure compiler type parity across disk reads.
 
 ## How it works
 ### In-RAM Fast Compilation Pipeline (Sub-20ms Latency)
@@ -145,7 +196,7 @@ Powered by `etch_erlang`, GSH toggles terminal raw mode on the fly to support ch
 
 ## Elixir-Style Live Documentation (h command)
 
-While the Gleam compiler traditionally strips `///` comments during compilation (meaning compiled bytecode lacks documentation metadata), GSH bypasses this limitation entirely. By combining intelligent package path resolution with a live `glexer` token stream, the shell locates raw `.gleam` source files, lexes them on the fly, and extracts both module-level documentation and function signatures. This brings the legendary, tactile developer experience of Elixir's `iex` to Gleam, allowing developers to read rich, ANSI-formatted markdown documentation directly in the REPL without requiring modifications to the Gleam compiler.
+By combining intelligent package path resolution with a live `glexer` token stream, the shell locates raw `.gleam` source files, lexes them on the fly, and extracts both module-level documentation and function signatures. This brings the legendary, tactile developer experience of Elixir's `iex` to Gleam, allowing developers to read rich, ANSI-formatted markdown documentation directly in the REPL without requiring modifications to the Gleam compiler.
 
 ## Acknowledgments
 GSH stands on the shoulders of some excellent Gleam libraries:
@@ -157,5 +208,5 @@ GSH stands on the shoulders of some excellent Gleam libraries:
 
 Contributions are massively appreciated! A REPL would be a nice to have tool in the Gleam ecosystem, and there is plenty of room to grow. 
 
-<!-- ## License
-This project is licensed under the [Apache-2.0](LICENSE). -->
+## License
+This project is licensed under the [Apache-2.0](LICENSE).

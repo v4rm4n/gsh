@@ -34,6 +34,7 @@ pub type Evaluation {
     /// A custom function definition (stored as `#(Name, Source)`) to be injected 
     /// into future evaluations.
     new_function: Option(#(String, String)),
+    active_bindings: Option(List(Binding)),
   )
 }
 

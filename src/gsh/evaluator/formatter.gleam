@@ -144,7 +144,7 @@ fn is_runtime_output(line: String) -> Bool {
 
 /// Safely strips all ANSI escape codes from a string so we can reliably 
 /// perform text matching without colors breaking the comparisons.
-fn strip_ansi(text: String) -> String {
+pub fn strip_ansi(text: String) -> String {
   strip_ansi_loop(text, "")
 }
 

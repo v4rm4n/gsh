@@ -83,6 +83,7 @@ pub fn run(
         new_import: None,
         new_type: None,
         new_function: None,
+        active_bindings: None,
       )
 
     Ok(_) -> {
@@ -134,6 +135,7 @@ pub fn run(
                 new_import: None,
                 new_type: None,
                 new_function: None,
+                active_bindings: None,
               )
             }
 
@@ -148,6 +150,7 @@ pub fn run(
                 new_import: None,
                 new_type: None,
                 new_function: None,
+                active_bindings: None,
               )
           }
         }
@@ -161,6 +164,7 @@ pub fn run(
             new_import: None,
             new_type: None,
             new_function: None,
+            active_bindings: None,
           )
       }
     }

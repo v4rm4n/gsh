@@ -371,13 +371,17 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               }
           }
 
-          // Only prune an old binding if ALL of its names were overwritten!
-          // This safely preserves partially shadowed bindings like tuples or records.
+          // Start from pruned bindings if evaluator auto-cleared stale host code references
+          let current_bindings = case result.active_bindings {
+            option.Some(active) -> active
+            option.None -> state.bindings
+          }
+
+          // Filter out shadowed variable bindings
           let base_bindings = case defined_names {
-            [] -> state.bindings
+            [] -> current_bindings
             _ ->
-              list.filter(state.bindings, fn(b) {
-                // Keep the binding if at least one of its variables is STILL valid
+              list.filter(current_bindings, fn(b) {
                 list.any(b.names, fn(n) { !list.contains(defined_names, n) })
               })
           }
