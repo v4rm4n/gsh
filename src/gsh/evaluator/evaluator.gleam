@@ -37,6 +37,7 @@ pub fn evaluate(
   types: List(String),
   functions: List(String),
   debug: Bool,
+  show_labels: Bool,
   prompt_count: Int,
 ) -> Evaluation {
   let module_name = "gsh_eval_" <> int.to_string(prompt_count)
@@ -136,6 +137,7 @@ pub fn evaluate(
         types,
         functions,
         debug,
+        show_labels,
         module_name,
         evaluator_path,
         parsed_binding,
@@ -156,6 +158,7 @@ fn evaluate_loop(
   types: List(String),
   functions: List(String),
   debug: Bool,
+  show_labels: Bool,
   module_name: String,
   evaluator_path: String,
   parsed_binding: option.Option(Binding),
@@ -183,7 +186,14 @@ fn evaluate_loop(
     Ok(_) -> {
       let start_time = runtime.system_time()
       let needs_export = is_import || is_type || is_function
-      let result = runner.run(parsed_binding, module_name, input, needs_export)
+      let result =
+        runner.run(
+          parsed_binding,
+          module_name,
+          input,
+          needs_export,
+          show_labels,
+        )
       let elapsed_us = runtime.system_time() - start_time
       let _ = simplifile.delete(evaluator_path)
 
@@ -252,6 +262,7 @@ fn evaluate_loop(
                     types,
                     functions,
                     debug,
+                    show_labels,
                     module_name,
                     evaluator_path,
                     parsed_binding,
@@ -357,7 +368,7 @@ fn make_function_source(
   <> "\n\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  terminal.println(\"// Function defined\")\n"
+  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: \"// Function defined\")\n"
   <> "}\n"
 }
 
@@ -365,6 +376,7 @@ fn imports_source(imports: List(String)) -> String {
   let base =
     "import gsh/runtime/store as gsh_store\n"
     <> "import gsh/runtime/runtime as gsh_internal_runtime\n"
+    <> "import simplifile as gsh_internal_simplifile\n"
 
   let merged = parser.merge_imports(imports)
 
@@ -417,7 +429,7 @@ fn make_type_source(
   <> "\n\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  terminal.println(\"// Type defined\")\n"
+  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
   <> "}\n"
 }
 
@@ -459,7 +471,7 @@ fn make_expression_source(
   <> expression
   <> "\n"
   <> "  }\n"
-  <> "  terminal.print(gsh_internal_formatter.format_output(gsh_internal_string.inspect(gsh_internal_expr)))\n"
+  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect(gsh_internal_expr))\n"
   <> "  gsh_internal_expr\n"
   <> "}\n"
 }
@@ -495,9 +507,9 @@ fn make_normal_binding_source(
       <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
       <> generate_current_binding(binding)
-      <> "  terminal.print(gsh_internal_formatter.format_output(gsh_internal_string.inspect("
+      <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect("
       <> name
-      <> ")))\n"
+      <> "))\n"
       <> "  "
       <> name
       <> "\n"
@@ -522,7 +534,7 @@ fn make_complex_binding_source(
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> generate_current_binding(binding)
-  <> "  terminal.print(\"ok\")\n"
+  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
   <> "}\n"
 }
 

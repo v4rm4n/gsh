@@ -63,6 +63,7 @@ pub fn run(
   module_name: String,
   source_input: String,
   needs_export: Bool,
+  show_labels: Bool,
 ) -> Evaluation {
   let args = [
     "compile-package", "--target", "erlang", "--package", ".", "--out",
@@ -119,6 +120,28 @@ pub fn run(
                 Error(_) -> ""
               }
 
+              // 1. Read raw inspect string captured in gsh_out.txt
+              let raw_val = case simplifile.read("gsh_out.txt") {
+                Ok(s) -> s
+                Error(_) -> ""
+              }
+              let _ = simplifile.delete("gsh_out.txt")
+
+              // 2. Hydrate parameter labels if enabled
+              let hydrated = case show_labels && raw_val != "" {
+                True -> {
+                  let constructor = case string.split_once(raw_val, "(") {
+                    Ok(#(c, _)) -> c
+                    Error(_) -> raw_val
+                  }
+                  let labels =
+                    types.get_constructor_labels(json_str, constructor)
+                  formatter.hydrate_labels(raw_val, constructor, labels)
+                }
+                False -> raw_val
+              }
+
+              // 3. Infer or get type suffix
               let type_suffix = case
                 types.infer_or_get_type(json_str, module_name, source_input)
               {
@@ -127,8 +150,13 @@ pub fn run(
                 Error(_) -> ""
               }
 
+              let final_output = case hydrated {
+                "" -> type_suffix <> "\n"
+                _ -> formatter.format_output(hydrated) <> type_suffix <> "\n"
+              }
+
               Evaluation(
-                output: type_suffix <> "\n",
+                output: final_output,
                 success: True,
                 error_kind: NoError,
                 new_binding: persist_binding(binding),

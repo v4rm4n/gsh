@@ -62,6 +62,7 @@ pub type ShellState {
     /// Toggles verbose output for debugging the internal AST parsing and 
     /// evaluation pipeline.
     debug: Bool,
+    show_labels: Bool,
   )
 }
 
@@ -129,7 +130,7 @@ pub fn main() -> Nil {
   banner()
 
   // Initialized with empty lists
-  shell_loop(ShellState(1, [], [], [], [], [], False))
+  shell_loop(ShellState(1, [], [], [], [], [], False, False))
 
   let assert Ok(_) = tty.exit_raw()
 
@@ -163,6 +164,7 @@ fn shell_loop(state: ShellState) -> Nil {
         state.history,
         state.functions,
         state.debug,
+        state.show_labels,
       ))
 
     _ -> handle_input(input, state)
@@ -193,6 +195,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
+        state.show_labels,
       ))
 
     command.Exit -> {
@@ -211,6 +214,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
+        state.show_labels,
       ))
     }
 
@@ -248,6 +252,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
+        state.show_labels,
       ))
     }
 
@@ -289,6 +294,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
+        state.show_labels,
       ))
     }
 
@@ -308,7 +314,25 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         new_debug,
+        state.show_labels,
       ))
+    }
+
+    command.ToggleLabels -> {
+      let new_show_labels = !state.show_labels
+      let status = case new_show_labels {
+        True -> "enabled"
+        False -> "disabled"
+      }
+      terminal.println("Field labels " <> status)
+
+      shell_loop(
+        ShellState(
+          ..state,
+          prompt_count: state.prompt_count + 1,
+          show_labels: new_show_labels,
+        ),
+      )
     }
 
     command.NotCommand -> {
@@ -328,6 +352,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             history,
             state.functions,
             state.debug,
+            state.show_labels,
           ))
         }
 
@@ -347,6 +372,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               type_sources,
               function_sources,
               state.debug,
+              state.show_labels,
               state.prompt_count,
             )
 
@@ -433,6 +459,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             history,
             functions,
             state.debug,
+            state.show_labels,
           ))
         }
       }

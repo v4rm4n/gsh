@@ -6,6 +6,7 @@ import gleam/float
 import gleam/int
 import gleam/json
 import gleam/list
+import gleam/option
 import gleam/result
 import gleam/string
 
@@ -102,21 +103,39 @@ pub type ModuleData {
   )
 }
 
-pub type TypeData {
-  TypeData(constructors: List(ConstructorData))
-}
-
-pub type ConstructorData {
-  ConstructorData(name: String)
-}
-
 pub type FunctionData {
   FunctionData(return_type: TypeNode)
 }
 
+pub type TypeData {
+  TypeData(constructors: List(ConstructorData))
+}
+
+pub type ParameterData {
+  ParameterData(label: option.Option(String))
+}
+
+pub type ConstructorData {
+  ConstructorData(name: String, parameters: List(ParameterData))
+}
+
+fn parameter_decoder() -> decode.Decoder(ParameterData) {
+  use label <- decode.optional_field(
+    "label",
+    option.None,
+    decode.optional(decode.string),
+  )
+  decode.success(ParameterData(label: label))
+}
+
 fn constructor_decoder() -> decode.Decoder(ConstructorData) {
   use name <- decode.field("name", decode.string)
-  decode.success(ConstructorData(name: name))
+  use parameters <- decode.optional_field(
+    "parameters",
+    [],
+    decode.list(parameter_decoder()),
+  )
+  decode.success(ConstructorData(name: name, parameters: parameters))
 }
 
 fn type_data_decoder() -> decode.Decoder(TypeData) {
@@ -389,6 +408,46 @@ fn find_qualified_function_in_modules(
           }
         }
         False -> find_qualified_function_in_modules(rest, mod_alias, fn_name)
+      }
+    }
+  }
+}
+
+pub fn get_constructor_labels(
+  json_string: String,
+  cname: String,
+) -> List(String) {
+  case json.parse(json_string, package_interface_decoder()) {
+    Ok(pi) -> find_labels_in_modules(dict.to_list(pi.modules), cname)
+    Error(_) -> []
+  }
+}
+
+fn find_labels_in_modules(
+  modules: List(#(String, ModuleData)),
+  cname: String,
+) -> List(String) {
+  case modules {
+    [] -> []
+    [#(_, mod_data), ..rest] -> {
+      case find_labels_in_types(dict.to_list(mod_data.types), cname) {
+        [] -> find_labels_in_modules(rest, cname)
+        labels -> labels
+      }
+    }
+  }
+}
+
+fn find_labels_in_types(
+  types: List(#(String, TypeData)),
+  cname: String,
+) -> List(String) {
+  case types {
+    [] -> []
+    [#(_, type_data), ..rest] -> {
+      case list.find(type_data.constructors, fn(c) { c.name == cname }) {
+        Ok(c) -> list.map(c.parameters, fn(p) { option.unwrap(p.label, "") })
+        Error(_) -> find_labels_in_types(rest, cname)
       }
     }
   }
