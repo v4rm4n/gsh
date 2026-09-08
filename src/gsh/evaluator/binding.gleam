@@ -1,9 +1,9 @@
-//// The `binding` module defines the core data structures used to track, persist, 
-//// and safely shadow variable assignments across sequential REPL prompts.
-////
-//// When a user evaluates an expression, the AST parser extracts the assignment 
-//// into a `Binding` record. The shell recursively injects these records into 
-//// subsequent temporary modules to maintain stateful lexical scope.
+// The `binding` module defines the core data structures used to track, persist, 
+// and safely shadow variable assignments across sequential REPL prompts.
+//
+// When a user evaluates an expression, the AST parser extracts the assignment 
+// into a `Binding` record. The shell recursively injects these records into 
+// subsequent temporary modules to maintain stateful lexical scope.
 
 // src/gsh/evaluator/binding.gleam
 

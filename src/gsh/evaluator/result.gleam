@@ -1,10 +1,10 @@
-//// The `result` module defines the core data structures returned by the 
-//// evaluation engine back to the REPL's main state loop.
-////
-//// When the shell processes user input, it needs more than just a raw string 
-//// to print. It requires structured metadata detailing execution success, 
-//// error classifications, and any new lexical artifacts (variables, imports, 
-//// types, functions) that must be merged into the persistent `ShellState`.
+// The `result` module defines the core data structures returned by the 
+// evaluation engine back to the REPL's main state loop.
+//
+// When the shell processes user input, it needs more than just a raw string 
+// to print. It requires structured metadata detailing execution success, 
+// error classifications, and any new lexical artifacts (variables, imports, 
+// types, functions) that must be merged into the persistent `ShellState`.
 
 // src/gsh/evaluator/result.gleam
 

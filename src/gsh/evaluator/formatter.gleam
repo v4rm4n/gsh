@@ -1,11 +1,11 @@
-//// The `formatter` module is responsible for cleaning up and beautifying 
-//// the raw output emitted by the Gleam compiler and Erlang runtime.
-////
-//// Because GSH executes code by compiling temporary `gsh_eval_X.gleam` files, 
-//// the underlying compiler frequently generates noisy "unused variable" warnings 
-//// and exposes absolute internal file paths. This module intercepts that text stream, 
-//// purges the noise, rewrites stack traces to simulate a native REPL environment, 
-//// and applies ANSI syntax highlighting.
+// The `formatter` module is responsible for cleaning up and beautifying 
+// the raw output emitted by the Gleam compiler and Erlang runtime.
+//
+// Because GSH executes code by compiling temporary `gsh_eval_X.gleam` files, 
+// the underlying compiler frequently generates noisy "unused variable" warnings 
+// and exposes absolute internal file paths. This module intercepts that text stream, 
+// purges the noise, rewrites stack traces to simulate a native REPL environment, 
+// and applies ANSI syntax highlighting.
 
 // src/gsh/evaluator/formatter.gleam
 

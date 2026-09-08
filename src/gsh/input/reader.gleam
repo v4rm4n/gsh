@@ -1,9 +1,9 @@
-//// The `reader` module provides an event-driven terminal polling loop for raw-mode TTY input.
-////
-//// When operating in raw mode, user keystrokes are received as unbuffered input streams. 
-//// This module wraps the low-level `etch` event parser to poll TTY state, filter out non-keyboard 
-//// signals (such as window resizes or mouse movements), intercept control chord modifiers 
-//// (e.g., `Ctrl+L` or `Ctrl+Left`), and map raw events into the shell's structured `Key` domain.
+// The `reader` module provides an event-driven terminal polling loop for raw-mode TTY input.
+//
+// When operating in raw mode, user keystrokes are received as unbuffered input streams. 
+// This module wraps the low-level `etch` event parser to poll TTY state, filter out non-keyboard 
+// signals (such as window resizes or mouse movements), intercept control chord modifiers 
+// (e.g., `Ctrl+L` or `Ctrl+Left`), and map raw events into the shell's structured `Key` domain.
 
 // src/gsh/input/reader.gleam
 

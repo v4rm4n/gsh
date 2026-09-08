@@ -1,11 +1,11 @@
-//// The `store` module provides a lightweight, persistent key-value cache 
-//// backed by the Erlang Process Dictionary (`erlang:get/1` and `erlang:put/2`).
-////
-//// In GSH's synthetic runtime approach, generated evaluation modules re-declare historical 
-//// statements to maintain lexical scope. To prevent duplicate side-effects (such as process 
-//// spawning or network calls), every variable binding is wrapped in a cache lookup. 
-//// This module ensures that bindings are computed exactly once during their initial evaluation 
-//// and retrieved directly from BEAM process memory in subsequent prompts.
+// The `store` module provides a lightweight, persistent key-value cache 
+// backed by the Erlang Process Dictionary (`erlang:get/1` and `erlang:put/2`).
+//
+// In GSH's synthetic runtime approach, generated evaluation modules re-declare historical 
+// statements to maintain lexical scope. To prevent duplicate side-effects (such as process 
+// spawning or network calls), every variable binding is wrapped in a cache lookup. 
+// This module ensures that bindings are computed exactly once during their initial evaluation 
+// and retrieved directly from BEAM process memory in subsequent prompts.
 
 // src/gsh/runtime/store.gleam
 
@@ -29,6 +29,7 @@ fn has(key: String) -> Bool
 /// **Cache Logic:**
 /// * If `key` exists in the Erlang Process Dictionary, retrieves and returns the stored value immediately.
 /// * If `key` is absent, executes the `compute` closure, caches the evaluated result under `key`, and returns it.
+@internal
 pub fn cache(key: String, compute: fn() -> a) -> a {
   case has(key) {
     True -> get(key)

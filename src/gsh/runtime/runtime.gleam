@@ -1,8 +1,8 @@
-//// The `runtime` module serves as GSH's low-level bridge to the Erlang Virtual Machine (BEAM).
-//// 
-//// It exposes the Foreign Function Interfaces (FFI) required for dynamic in-memory code loading, 
-//// background actor orchestration, VM metadata inspection, logger modification, and exception trapping. 
-//// All functions in this module delegate directly to Erlang's underlying `code` server or GSH's `ffi.erl` driver.
+// The `runtime` module serves as GSH's low-level bridge to the Erlang Virtual Machine (BEAM).
+// 
+// It exposes the Foreign Function Interfaces (FFI) required for dynamic in-memory code loading, 
+// background actor orchestration, VM metadata inspection, logger modification, and exception trapping. 
+// All functions in this module delegate directly to Erlang's underlying `code` server or GSH's `ffi.erl` driver.
 
 // src/gsh/runtime/runtime.gleam
 

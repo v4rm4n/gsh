@@ -1,10 +1,10 @@
-//// The `runner` module orchestrates the compilation and execution pipeline 
-//// for the shell's dynamically generated REPL modules.
-////
-//// It acts as the bridge between the host filesystem and the Erlang VM, 
-//// utilizing `shellout` to invoke the Gleam compiler for static analysis 
-//// and Erlang generation, and utilizing the `runtime` FFI to dynamically compile, 
-//// load, and execute the resulting code directly in memory.
+// The `runner` module orchestrates the compilation and execution pipeline 
+// for the shell's dynamically generated REPL modules.
+//
+// It acts as the bridge between the host filesystem and the Erlang VM, 
+// utilizing `shellout` to invoke the Gleam compiler for static analysis 
+// and Erlang generation, and utilizing the `runtime` FFI to dynamically compile, 
+// load, and execute the resulting code directly in memory.
 
 // src/gsh/evaluator/runner.gleam
 

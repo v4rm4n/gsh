@@ -1,9 +1,9 @@
-//// The `source` module provides boilerplate code generation helpers for the evaluator.
-////
-//// When the evaluator constructs a temporary `gsh_eval_X.gleam` file, it uses 
-//// this module to inject hidden standard imports under safely aliased namespaces 
-//// (e.g., `gsh_internal_string`). This prevents variable collisions if a user 
-//// explicitly imports the same standard libraries in their REPL session.
+// The `source` module provides boilerplate code generation helpers for the evaluator.
+//
+// When the evaluator constructs a temporary `gsh_eval_X.gleam` file, it uses 
+// this module to inject hidden standard imports under safely aliased namespaces 
+// (e.g., `gsh_internal_string`). This prevents variable collisions if a user 
+// explicitly imports the same standard libraries in their REPL session.
 
 // src/gsh/evaluator/source.gleam
 

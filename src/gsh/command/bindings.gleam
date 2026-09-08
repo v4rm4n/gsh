@@ -1,9 +1,9 @@
-//// The `bindings` module provides introspection capabilities for the shell's 
-//// lexical environment.
-////
-//// It allows users to query the currently active REPL state to see exactly 
-//// which variables are available in memory, handling both simple assignments 
-//// and complex pattern-matched destructurings.
+// The `bindings` module provides introspection capabilities for the shell's 
+// lexical environment.
+//
+// It allows users to query the currently active REPL state to see exactly 
+// which variables are available in memory, handling both simple assignments 
+// and complex pattern-matched destructurings.
 
 // src/gsh/command/bindings.gleam
 

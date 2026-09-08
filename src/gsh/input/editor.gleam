@@ -1,10 +1,10 @@
-//// The `editor` module implements a custom multiline line-editing engine built for raw-mode TTY input.
-////
-//// Standard input primitives (like `erlang:get_line`) block thread execution and lack support 
-//// for custom keybindings, autocomplete menus, or 2D cursor traversal. This module replaces 
-//// standard terminal input by capturing keystrokes directly, translating 1D buffer indices into 
-//// 2D terminal coordinates, rendering floating autocompletion menus, and managing interactive 
-//// command history navigation.
+// The `editor` module implements a custom multiline line-editing engine built for raw-mode TTY input.
+//
+// Standard input primitives (like `erlang:get_line`) block thread execution and lack support 
+// for custom keybindings, autocomplete menus, or 2D cursor traversal. This module replaces 
+// standard terminal input by capturing keystrokes directly, translating 1D buffer indices into 
+// 2D terminal coordinates, rendering floating autocompletion menus, and managing interactive 
+// command history navigation.
 
 // src/gsh/input/editor.gleam
 

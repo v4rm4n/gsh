@@ -1,9 +1,9 @@
-//// The `version` module provides introspection into the currently running 
-//// shell's deployment metadata.
-////
-//// When a user executes the `v()` command, this module queries the Erlang 
-//// application controller via FFI to dynamically extract and format the 
-//// active version of the GSH package.
+// The `version` module provides introspection into the currently running 
+// shell's deployment metadata.
+//
+// When a user executes the `v()` command, this module queries the Erlang 
+// application controller via FFI to dynamically extract and format the 
+// active version of the GSH package.
 
 // src/gsh/command/version.gleam
 

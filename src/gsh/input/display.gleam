@@ -1,9 +1,9 @@
-//// The `display` module renders the REPL prompt and active input buffer to 
-//// the terminal output stream.
-////
-//// It provides real-time, syntax-highlighted visual feedback during typing 
-//// using the `contour` library, while applying defensive rendering heuristics 
-//// to prevent ANSI escaping artifacts during incomplete string inputs.
+// The `display` module renders the REPL prompt and active input buffer to 
+// the terminal output stream.
+//
+// It provides real-time, syntax-highlighted visual feedback during typing 
+// using the `contour` library, while applying defensive rendering heuristics 
+// to prevent ANSI escaping artifacts during incomplete string inputs.
 
 // src/gsh/input/display.gleam
 

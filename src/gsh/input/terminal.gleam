@@ -1,9 +1,9 @@
-//// The `terminal` module handles low-level stdout rendering and ANSI escape sequences.
-////
-//// When operating in TTY raw mode, standard carriage return and newline behaviors 
-//// (`\n`) are unhandled by the terminal driver. This module provides an abstraction layer 
-//// for rendering output, handling newline translations (`\r\n`), managing visibility, 
-//// and controlling 2D hardware cursor movement via ANSI control codes.
+// The `terminal` module handles low-level stdout rendering and ANSI escape sequences.
+//
+// When operating in TTY raw mode, standard carriage return and newline behaviors 
+// (`\n`) are unhandled by the terminal driver. This module provides an abstraction layer 
+// for rendering output, handling newline translations (`\r\n`), managing visibility, 
+// and controlling 2D hardware cursor movement via ANSI control codes.
 
 // src/gsh/input/terminal.gleam
 

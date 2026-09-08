@@ -1,8 +1,8 @@
-//// The `docs` module powers the shell's built-in documentation engine.
-////
-//// It dynamically locates, reads, and lexes Gleam source files on demand to extract 
-//// module-level (`////`) and function-level (`///`) docstrings. It then renders 
-//// these raw strings into formatted, ANSI-colored terminal output for quick reference.
+// The `docs` module powers the shell's built-in documentation engine.
+//
+// It dynamically locates, reads, and lexes Gleam source files on demand to extract 
+// module-level (`////`) and function-level (`///`) docstrings. It then renders 
+// these raw strings into formatted, ANSI-colored terminal output for quick reference.
 
 // src/gsh/evaluator/docs.gleam
 

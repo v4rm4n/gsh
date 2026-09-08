@@ -1,8 +1,8 @@
-//// The `help` module provides the built-in command reference for the interactive shell.
-////
-//// It handles rendering the help menu when the user requests assistance, 
-//// providing a quick cheat sheet for REPL-specific utilities, inspection tools, 
-//// and hot-reloading commands.
+// The `help` module provides the built-in command reference for the interactive shell.
+//
+// It handles rendering the help menu when the user requests assistance, 
+// providing a quick cheat sheet for REPL-specific utilities, inspection tools, 
+// and hot-reloading commands.
 
 // src/gsh/command/help.gleam
 

@@ -1,9 +1,9 @@
-//// The `buffer` module handles multiline input detection for the REPL.
-////
-//// When a user enters code spanning multiple lines (like a `case` block, 
-//// anonymous function, or complex data structure), this module analyzes the 
-//// surface AST to determine if the statement is complete or requires additional 
-//// input via the continuation prompt (`...>`).
+// The `buffer` module handles multiline input detection for the REPL.
+//
+// When a user enters code spanning multiple lines (like a `case` block, 
+// anonymous function, or complex data structure), this module analyzes the 
+// surface AST to determine if the statement is complete or requires additional 
+// input via the continuation prompt (`...>`).
 
 // src/gsh/input/buffer.gleam
 

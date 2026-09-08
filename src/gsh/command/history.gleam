@@ -1,8 +1,8 @@
-//// The `history` module provides introspection into the REPL's chronological 
-//// execution log.
-////
-//// It allows users to review their past inputs, formatting the raw string 
-//// history into a numbered, human-readable list for quick reference.
+// The `history` module provides introspection into the REPL's chronological 
+// execution log.
+//
+// It allows users to review their past inputs, formatting the raw string 
+// history into a numbered, human-readable list for quick reference.
 
 // src/gsh/command/history.gleam
 

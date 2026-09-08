@@ -1,18 +1,18 @@
-//// The `evaluator` module is the core module of the GSH REPL.
-////
-//// Because Gleam is statically typed and compiled, we cannot evaluate raw AST 
-//// dynamically like Elixir's IEx. Instead, this module acts as a synthetic runtime, 
-//// taking the user's input, injecting historical state (imports, bindings, types, functions), 
-//// and generating a unique `gsh_eval_X.gleam` file for execution.
-////
-//// **Key Capabilities:**
-//// * **Token Routing:** Uses `glexer` to parse input and accurately classify the statement 
-////   (import, type, function, binding, or raw expression).
-//// * **Side-Effect Caching:** Wraps every variable assignment in an Erlang Process Dictionary 
-////   check, ensuring side effects (like `io.println`) execute exactly once per session even 
-////   as the file is continually recompiled.
-//// * **Cache Collision Prevention:** Appends the `prompt_count` to module names to 
-////   guarantee the Erlang VM loads fresh bytecode from disk on every execution.
+// The `evaluator` module is the core module of the GSH REPL.
+//
+// Because Gleam is statically typed and compiled, we cannot evaluate raw AST 
+// dynamically like Elixir's IEx. Instead, this module acts as a synthetic runtime, 
+// taking the user's input, injecting historical state (imports, bindings, types, functions), 
+// and generating a unique `gsh_eval_X.gleam` file for execution.
+//
+// **Key Capabilities:**
+// * **Token Routing:** Uses `glexer` to parse input and accurately classify the statement 
+//   (import, type, function, binding, or raw expression).
+// * **Side-Effect Caching:** Wraps every variable assignment in an Erlang Process Dictionary 
+//   check, ensuring side effects (like `io.println`) execute exactly once per session even 
+//   as the file is continually recompiled.
+// * **Cache Collision Prevention:** Appends the `prompt_count` to module names to 
+//   guarantee the Erlang VM loads fresh bytecode from disk on every execution.
 
 // src/gsh/evaluator/evaluator.gleam
 

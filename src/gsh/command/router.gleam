@@ -1,9 +1,9 @@
-//// The `router` module intercepts user input to check for built-in shell commands.
-////
-//// Before sending input to the dynamic evaluator (which would try to compile 
-//// and execute it as Gleam code), the REPL passes the input here. If it matches 
-//// a known command (like `:h` for help, `:cc` for hot-reloading, or `:c` for clearing the screen), 
-//// the router flags it for immediate execution and tells the shell to skip evaluation.
+// The `router` module intercepts user input to check for built-in shell commands.
+//
+// Before sending input to the dynamic evaluator (which would try to compile 
+// and execute it as Gleam code), the REPL passes the input here. If it matches 
+// a known command (like `:h` for help, `:cc` for hot-reloading, or `:c` for clearing the screen), 
+// the router flags it for immediate execution and tells the shell to skip evaluation.
 
 // src/gsh/command/router.gleam
 

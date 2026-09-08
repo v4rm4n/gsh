@@ -1,9 +1,9 @@
-//// The `key` module defines the domain model for terminal input events.
-////
-//// When the TTY operates in raw mode, user keystrokes—ranging from single UTF-8 
-//// graphemes to multi-byte ANSI escape sequences (e.g., arrow keys, word navigation)—
-//// are captured as raw byte streams. This module provides an algebraic data type 
-//// to abstract low-level TTY sequences into structured events for the editor.
+// The `key` module defines the domain model for terminal input events.
+//
+// When the TTY operates in raw mode, user keystrokes—ranging from single UTF-8 
+// graphemes to multi-byte ANSI escape sequences (e.g., arrow keys, word navigation)—
+// are captured as raw byte streams. This module provides an algebraic data type 
+// to abstract low-level TTY sequences into structured events for the editor.
 
 // src/gsh/input/key.gleam
 
