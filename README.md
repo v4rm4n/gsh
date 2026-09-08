@@ -39,6 +39,25 @@ gleam add gsh
 gleam run -m gsh
 ```
 
+### Call functions from GSH
+```gleam
+Erlang/OTP 28 [erts-16.1.2] [source] [64-bit] [smp:16:16] [ds:16:16:10] [async-threads:1] [jit:ns]
+
+Interactive Gleam (GSH 1.1.1) - press Ctrl+C to exit (type h() ENTER for help)
+gsh(1)> import your_app/config
+ok
+gsh(2)> config.load()
+Runtime Error: "error:undef"
+gsh(3)> :cc
+  Compiling your_app
+   Compiled in 0.25s
+
+Ok (Imports hot-reloaded)
+gsh(4)> config.load()
+Config("0.1.0", "0.0.0.0", 8000) : Config
+gsh(5)> 
+```
+
 ### App loader
 ```bash
 gleam run -m gsh -- my_app worker_pool bg_module_1
