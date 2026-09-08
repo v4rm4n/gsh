@@ -36,6 +36,7 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
 /// This is invoked by the `compile` command in the REPL, allowing developers 
 /// to rebuild their background application and trigger Erlang VM hot-reloads 
 /// without dropping their active shell session.
+@internal
 pub fn build_project() -> Result(String, #(Int, String)) {
   shellout.command(
     run: "gleam",
@@ -58,6 +59,7 @@ pub fn build_project() -> Result(String, #(Int, String)) {
 ///    native compiler FFI to compile it directly into RAM, bypassing `.beam` disk I/O.
 /// 3. **Execution:** Invokes the dynamically loaded `gsh_entry` function, capturing 
 ///    the evaluation success or gracefully intercepting Erlang VM runtime crashes.
+@internal
 pub fn run(
   binding: Option(Binding),
   module_name: String,

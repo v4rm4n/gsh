@@ -19,6 +19,7 @@ import gsh/input/terminal
 /// * Prints an indented list of variable names or binding patterns.
 /// * Gracefully handles empty states by printing `(none)`.
 /// * Appends a summary footer with the total count of active bindings.
+@internal
 pub fn show(bindings: List(Binding)) -> Nil {
   terminal.println("")
   terminal.println("Loaded bindings:")

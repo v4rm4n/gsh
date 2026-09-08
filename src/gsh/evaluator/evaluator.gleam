@@ -30,6 +30,7 @@ import gsh/evaluator/style
 import gsh/runtime/runtime
 import simplifile
 
+@internal
 pub fn evaluate(
   input: String,
   bindings: List(Binding),

@@ -42,6 +42,7 @@ pub type Editor {
 /// Initializes the interactive editor state and initiates the blocking keystroke listener loop.
 /// 
 /// Returns the final, accumulated input string once the user submits execution via the `Enter` key.
+@internal
 pub fn read_line(
   prompt: String,
   history: List(String),

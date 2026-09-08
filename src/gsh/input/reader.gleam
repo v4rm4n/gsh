@@ -24,6 +24,7 @@ import gsh/input/key.{
 ///   preventing high CPU utilization during idle REPL prompts.
 /// * Recursively discards non-keyboard terminal events (e.g., window size changes, mouse clicks) 
 ///   or stream parse errors until a valid key event is received.
+@internal
 pub fn read_key() -> GshKey {
   // `input.read()` returns Option(Result(Event, EventError))
   case input.read() {

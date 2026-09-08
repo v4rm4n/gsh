@@ -15,6 +15,7 @@ import gleam/list
 import gleam/string
 
 /// Tracks nesting depth to safely tokenize Erlang's flat string outputs.
+@internal
 pub type HydrateState {
   HydrateState(
     depth: Int,
@@ -32,6 +33,7 @@ pub type HydrateState {
 /// * Trims trailing whitespace.
 /// * Applies dynamic ANSI syntax highlighting via the `contour` library so 
 ///   returned data structures (like tuples or records) look native to the terminal.
+@internal
 pub fn format_output(output: String) -> String {
   output
   |> string.split("\n")
@@ -48,6 +50,7 @@ pub fn format_output(output: String) -> String {
 /// * Trims whitespace.
 /// * Passes the resulting string through the `hide_internal_path` interceptor 
 ///   so the user sees a pristine REPL error trace rather than a filesystem leak.
+@internal
 pub fn format_error(output: String) -> String {
   output
   |> string.split("\n")
@@ -155,6 +158,7 @@ fn is_runtime_output(line: String) -> Bool {
 
 /// Safely strips all ANSI escape codes from a string so we can reliably 
 /// perform text matching without colors breaking the comparisons.
+@internal
 pub fn strip_ansi(text: String) -> String {
   strip_ansi_loop(text, "")
 }
@@ -174,6 +178,7 @@ fn strip_ansi_loop(remaining: String, acc: String) -> String {
 
 /// Hydrates a raw Erlang tuple string (e.g., `Config("0.1.0", 8000)`) 
 /// into a labeled Gleam string (e.g., `Config(version: "0.1.0", port: 8000)`).
+@internal
 pub fn hydrate_labels(
   raw_output: String,
   type_name: String,
@@ -188,13 +193,8 @@ pub fn hydrate_labels(
           let inner = string.slice(after, 0, string.length(after) - 1)
           let values = tokenize_inspect_string(inner)
 
-          let hydrated_pairs =
-            list.map2(labels, values, fn(label, val) {
-              case label {
-                "" -> val
-                _ -> label <> ": " <> val
-              }
-            })
+          // Use our safe zipper instead of list.map2
+          let hydrated_pairs = zip_labels(labels, values, [])
 
           before <> prefix <> string.join(hydrated_pairs, ", ") <> ")"
         }
@@ -205,8 +205,36 @@ pub fn hydrate_labels(
   }
 }
 
+/// Safely zips labels and values. If values outnumber labels (e.g. for Prelude types 
+/// like `Ok` or `Error`), it appends the remaining values without labels.
+fn zip_labels(
+  labels: List(String),
+  values: List(String),
+  acc: List(String),
+) -> List(String) {
+  case labels, values {
+    [], [] -> list.reverse(acc)
+
+    // Out of labels, but still have values -> append raw values
+    [], [v, ..vs] -> zip_labels([], vs, [v, ..acc])
+
+    // Have both label and value
+    [l, ..ls], [v, ..vs] -> {
+      let pair = case l {
+        "" -> v
+        _ -> l <> ": " <> v
+      }
+      zip_labels(ls, vs, [pair, ..acc])
+    }
+
+    // Out of values (shouldn't happen on valid inspect strings)
+    _, [] -> list.reverse(acc)
+  }
+}
+
 /// Safely splits a comma-separated string, ignoring commas trapped inside 
 /// nested brackets, parentheses, or escaped strings.
+@internal
 pub fn tokenize_inspect_string(raw_args: String) -> List(String) {
   let chars = string.to_graphemes(raw_args)
   tokenize_loop(chars, HydrateState(0, False, False, "", []))

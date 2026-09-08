@@ -12,6 +12,7 @@ import gsh/input/terminal
 /// It uses the custom `terminal.println` function to ensure newlines (`\n`) 
 /// are correctly translated to CRLF (`\r\n`) so the formatting doesn't break 
 /// while the terminal is in raw mode.
+@internal
 pub fn show() -> Nil {
   terminal.println(
     "

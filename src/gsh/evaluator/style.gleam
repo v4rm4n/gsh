@@ -10,15 +10,18 @@ const dim = "\u{001b}[90m"
 
 // Bright black / dim grey
 
+@internal
 pub fn error(text: String) -> String {
   red <> text <> reset
 }
 
+@internal
 pub fn warning(text: String) -> String {
   yellow <> text <> reset
 }
 
 // We will use this in Step 2 for the OCaml-style `: Int`
+@internal
 pub fn type_note(text: String) -> String {
   dim <> text <> reset
 }

@@ -8,6 +8,7 @@
 // src/gsh/evaluator/binding.gleam
 
 /// Distinguishes between standard variable assignments and strict pattern matching.
+@internal
 pub type BindingKind {
   /// A standard, infallible assignment (e.g., `let x = 5`).
   Let
@@ -18,6 +19,7 @@ pub type BindingKind {
 }
 
 /// Represents a parsed and tracked variable assignment within the REPL session.
+@internal
 pub type Binding {
   Binding(
     /// The syntactical classification of the binding (`let` vs `let assert`).

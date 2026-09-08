@@ -15,6 +15,7 @@ import gsh/command/version
 import gsh/evaluator/binding.{type Binding}
 
 /// Represents the routing signal returned to the main shell loop.
+@internal
 pub type CommandResult {
   /// The command was recognized, executed, and the shell should prompt again.
   Handled
@@ -50,6 +51,7 @@ pub type CommandResult {
 ///   extracting the target payload for the documentation scraper.
 /// * **Context Injection:** Injects the current `bindings` and `history_entries` 
 ///   so introspection commands like `:b` and `:hs` can print accurate summaries.
+@internal
 pub fn handle(
   input: String,
   bindings: List(Binding),

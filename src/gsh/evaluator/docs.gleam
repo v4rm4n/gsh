@@ -19,6 +19,7 @@ import simplifile
 /// * Locates the module's `.gleam` source file on disk.
 /// * Lexes the raw source and filters out all tokens except `CommentModule` (`////`).
 /// * Renders a centered, bolded title followed by the parsed Markdown description.
+@internal
 pub fn get_module_help(module_path: String) -> String {
   case find_source(module_path) {
     Error(_) ->
@@ -54,6 +55,7 @@ pub fn get_module_help(module_path: String) -> String {
 /// * Captures the preceding block of `CommentDoc` (`///`) strings.
 /// * Captures the exact function signature tokens up to the opening curly brace.
 /// * Renders the signature in green, followed by the formatted Markdown description.
+@internal
 pub fn get_function_help(module_path: String, func_name: String) -> String {
   case find_source(module_path) {
     Error(_) ->

@@ -8,6 +8,7 @@
 // src/gsh/input/key.gleam
 
 /// Represents a parsed keystroke or control sequence captured from raw terminal input.
+@internal
 pub type Key {
   /// A printable UTF-8 character grapheme (e.g., `"a"`, `"Z"`, `"5"`, `" "`).
   Character(String)
