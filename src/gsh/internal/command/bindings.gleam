@@ -5,12 +5,12 @@
 // which variables are available in memory, handling both simple assignments 
 // and complex pattern-matched destructurings.
 
-// src/gsh/command/bindings.gleam
+// src/gsh/internal/command/bindings.gleam
 
 import gleam/int
 import gleam/list
-import gsh/evaluator/binding.{type Binding}
-import gsh/input/terminal
+import gsh/internal/evaluator/binding.{type Binding}
+import gsh/internal/input/terminal
 
 /// Renders a formatted, human-readable summary of all active variables 
 /// currently tracked by the REPL's state manager.
@@ -19,7 +19,6 @@ import gsh/input/terminal
 /// * Prints an indented list of variable names or binding patterns.
 /// * Gracefully handles empty states by printing `(none)`.
 /// * Appends a summary footer with the total count of active bindings.
-@internal
 pub fn show(bindings: List(Binding)) -> Nil {
   terminal.println("")
   terminal.println("Loaded bindings:")

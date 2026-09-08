@@ -5,17 +5,16 @@
 // a known command (like `:h` for help, `:cc` for hot-reloading, or `:c` for clearing the screen), 
 // the router flags it for immediate execution and tells the shell to skip evaluation.
 
-// src/gsh/command/router.gleam
+// src/gsh/internal/command/router.gleam
 
 import gleam/string
-import gsh/command/bindings
-import gsh/command/help
-import gsh/command/history
-import gsh/command/version
-import gsh/evaluator/binding.{type Binding}
+import gsh/internal/command/bindings
+import gsh/internal/command/help
+import gsh/internal/command/history
+import gsh/internal/command/version
+import gsh/internal/evaluator/binding.{type Binding}
 
 /// Represents the routing signal returned to the main shell loop.
-@internal
 pub type CommandResult {
   /// The command was recognized, executed, and the shell should prompt again.
   Handled
@@ -51,7 +50,6 @@ pub type CommandResult {
 ///   extracting the target payload for the documentation scraper.
 /// * **Context Injection:** Injects the current `bindings` and `history_entries` 
 ///   so introspection commands like `:b` and `:hs` can print accurate summaries.
-@internal
 pub fn handle(
   input: String,
   bindings: List(Binding),

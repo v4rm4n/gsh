@@ -14,23 +14,24 @@
 // * **Cache Collision Prevention:** Appends the `prompt_count` to module names to 
 //   guarantee the Erlang VM loads fresh bytecode from disk on every execution.
 
-// src/gsh/evaluator/evaluator.gleam
+// src/gsh/internal/evaluator/evaluator.gleam
 
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
-import gsh/evaluator/binding.{type Binding, Binding, Let, LetAssert}
-import gsh/evaluator/formatter
-import gsh/evaluator/parser
-import gsh/evaluator/result.{type Evaluation, CompileError, Evaluation, NoError}
-import gsh/evaluator/runner
-import gsh/evaluator/source
-import gsh/evaluator/style
-import gsh/runtime/runtime
+import gsh/internal/evaluator/binding.{type Binding, Binding, Let, LetAssert}
+import gsh/internal/evaluator/formatter
+import gsh/internal/evaluator/parser
+import gsh/internal/evaluator/result.{
+  type Evaluation, CompileError, Evaluation, NoError,
+}
+import gsh/internal/evaluator/runner
+import gsh/internal/evaluator/source
+import gsh/internal/evaluator/style
+import gsh/internal/runtime/runtime
 import simplifile
 
-@internal
 pub fn evaluate(
   input: String,
   bindings: List(Binding),
@@ -375,8 +376,8 @@ fn make_function_source(
 
 fn imports_source(imports: List(String)) -> String {
   let base =
-    "import gsh/runtime/store as gsh_store\n"
-    <> "import gsh/runtime/runtime as gsh_internal_runtime\n"
+    "import gsh/internal/runtime/store as gsh_store\n"
+    <> "import gsh/internal/runtime/runtime as gsh_internal_runtime\n"
     <> "import simplifile as gsh_internal_simplifile\n"
 
   let merged = parser.merge_imports(imports)

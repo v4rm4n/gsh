@@ -24,16 +24,16 @@ import gleam/io
 import gleam/list
 import gleam/option
 import gleam/string
-import gsh/command/router as command
-import gsh/evaluator/binding
-import gsh/evaluator/docs
-import gsh/evaluator/evaluator
-import gsh/evaluator/parser
-import gsh/evaluator/runner
-import gsh/input/buffer
-import gsh/input/editor
-import gsh/input/terminal
-import gsh/runtime/runtime.{app_version, system_version}
+import gsh/internal/command/router as command
+import gsh/internal/evaluator/binding
+import gsh/internal/evaluator/docs
+import gsh/internal/evaluator/evaluator
+import gsh/internal/evaluator/parser
+import gsh/internal/evaluator/runner
+import gsh/internal/input/buffer
+import gsh/internal/input/editor
+import gsh/internal/input/terminal
+import gsh/internal/runtime/runtime.{app_version, system_version}
 import simplifile
 
 /// Holds the persistent state of the shell session across evaluations.

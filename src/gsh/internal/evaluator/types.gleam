@@ -1,4 +1,4 @@
-// src/gsh/evaluator/types.gleam
+// src/gsh/internal/evaluator/types.gleam
 
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
@@ -10,7 +10,6 @@ import gleam/option
 import gleam/result
 import gleam/string
 
-@internal
 pub type TypeNode {
   Named(
     name: String,
@@ -23,7 +22,6 @@ pub type TypeNode {
   Fn(params: List(TypeNode), ret: TypeNode)
 }
 
-@internal
 pub fn type_node_decoder() -> decode.Decoder(TypeNode) {
   use kind <- decode.field("kind", decode.string)
 
@@ -55,7 +53,6 @@ pub fn type_node_decoder() -> decode.Decoder(TypeNode) {
   }
 }
 
-@internal
 pub fn render(node: TypeNode) -> String {
   case node {
     Named(name, _package, _module, []) -> name
@@ -75,7 +72,6 @@ pub fn render(node: TypeNode) -> String {
   }
 }
 
-@internal
 pub fn get_entry_type(
   json_string: String,
   module_name: String,
@@ -96,12 +92,10 @@ pub fn get_entry_type(
 // PACKAGE INTERFACE DECODER FOR FALLBACK TYPE LOOKUPS
 // =============================================================================
 
-@internal
 pub type PackageInterface {
   PackageInterface(name: String, modules: Dict(String, ModuleData))
 }
 
-@internal
 pub type ModuleData {
   ModuleData(
     types: Dict(String, TypeData),
@@ -109,22 +103,18 @@ pub type ModuleData {
   )
 }
 
-@internal
 pub type FunctionData {
   FunctionData(return_type: TypeNode)
 }
 
-@internal
 pub type TypeData {
   TypeData(constructors: List(ConstructorData))
 }
 
-@internal
 pub type ParameterData {
   ParameterData(label: option.Option(String))
 }
 
-@internal
 pub type ConstructorData {
   ConstructorData(name: String, parameters: List(ParameterData))
 }
@@ -176,7 +166,6 @@ fn module_data_decoder() -> decode.Decoder(ModuleData) {
   decode.success(ModuleData(types: types, functions: functions))
 }
 
-@internal
 pub fn package_interface_decoder() -> decode.Decoder(PackageInterface) {
   use name <- decode.field("name", decode.string)
   use modules <- decode.optional_field(
@@ -191,7 +180,6 @@ pub fn package_interface_decoder() -> decode.Decoder(PackageInterface) {
 // INFERENCE & LOOKUP PIPELINE
 // =============================================================================
 
-@internal
 pub fn infer_or_get_type(
   json_string: String,
   module_name: String,
@@ -425,7 +413,6 @@ fn find_qualified_function_in_modules(
   }
 }
 
-@internal
 pub fn get_constructor_labels(
   json_string: String,
   cname: String,

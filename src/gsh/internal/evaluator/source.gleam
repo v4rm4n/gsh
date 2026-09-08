@@ -17,11 +17,11 @@
 ///   under `gsh_internal_formatter` to process runtime inspect outputs.
 /// * **String (`with_string`):** Conditionally imports `gleam/string` under 
 ///   `gsh_internal_string` to safely stringify expressions without namespace collisions.
-@internal
 pub fn header(with_string: Bool, with_formatter: Bool) -> String {
-  "import gsh/input/terminal\n"
+  "import gsh/internal/input/terminal\n"
   <> case with_formatter {
-    True -> "import gsh/evaluator/formatter as gsh_internal_formatter\n"
+    True ->
+      "import gsh/internal/evaluator/formatter as gsh_internal_formatter\n"
     False -> ""
   }
   <> case with_string {

@@ -29,7 +29,6 @@ fn has(key: String) -> Bool
 /// **Cache Logic:**
 /// * If `key` exists in the Erlang Process Dictionary, retrieves and returns the stored value immediately.
 /// * If `key` is absent, executes the `compute` closure, caches the evaluated result under `key`, and returns it.
-@internal
 pub fn cache(key: String, compute: fn() -> a) -> a {
   case has(key) {
     True -> get(key)

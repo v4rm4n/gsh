@@ -22,7 +22,6 @@ import glexer/token
 ///   comments are safely ignored.
 /// * **Completion Criteria:** Returns `True` only when all delimiter depth counts 
 ///   reach zero or less, signaling that the statement is ready for evaluation.
-@internal
 pub fn is_complete(input: String) -> Bool {
   let tokens =
     glexer.new(input)

@@ -1,4 +1,4 @@
-// src/gsh/evaluator/parser.gleam
+// src/gsh/internal/evaluator/parser.gleam
 
 import glance
 import gleam/list
@@ -6,21 +6,19 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 
 // 1. The data structures our shell will use instead of raw tokens
-@internal
+
 pub type DefKind {
   FnDef
   TypeDef
   ConstDef
 }
 
-@internal
 pub type Item {
   ImportItem(module: String, source: String)
   DefinitionItem(name: String, kind: DefKind, source: String)
   ValueItem(names: List(String), rhs: String, is_assert: Bool)
 }
 
-@internal
 pub type ClassifyResult {
   Items(List(Item))
   ClassifyEmpty
@@ -28,12 +26,10 @@ pub type ClassifyResult {
   ClassifyError(String)
 }
 
-@internal
 pub type Unqualified {
   Unqualified(name: String, alias: Option(String))
 }
 
-@internal
 pub type ImportSpec {
   ImportSpec(
     module: String,
@@ -44,7 +40,7 @@ pub type ImportSpec {
 }
 
 // 2. The main entry point for the new parser
-@internal
+
 pub fn parse(src: String) -> ClassifyResult {
   let trimmed = string.trim(src)
   case trimmed {
@@ -139,7 +135,6 @@ fn extract_statements(statements: List(glance.Statement)) -> ClassifyResult {
   }
 }
 
-@internal
 pub fn pattern_names(pattern: glance.Pattern) -> List(String) {
   pattern_names_acc(pattern, [])
 }
@@ -198,7 +193,6 @@ fn push_unique(acc: List(String), name: String) -> List(String) {
   }
 }
 
-@internal
 pub fn merge_imports(imports: List(String)) -> List(String) {
   let src = string.join(imports, "\n")
   case glance.module(src) {
@@ -295,7 +289,6 @@ fn render_unqualified_type(item: Unqualified) -> String {
   "type " <> render_unqualified(item)
 }
 
-@internal
 pub fn get_imported_names(src: String) -> List(String) {
   case glance.module(src) {
     Ok(module) -> {

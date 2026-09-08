@@ -6,13 +6,12 @@
 // error classifications, and any new lexical artifacts (variables, imports, 
 // types, functions) that must be merged into the persistent `ShellState`.
 
-// src/gsh/evaluator/result.gleam
+// src/gsh/internal/evaluator/result.gleam
 
 import gleam/option.{type Option}
-import gsh/evaluator/binding.{type Binding}
+import gsh/internal/evaluator/binding.{type Binding}
 
 /// Encapsulates the complete lifecycle outcome of a single REPL evaluation prompt.
-@internal
 pub type Evaluation {
   Evaluation(
     /// The final formatted string (including ANSI syntax highlighting and debug 
@@ -40,7 +39,6 @@ pub type Evaluation {
 }
 
 /// Classifies the exact failure mode of an evaluation attempt.
-@internal
 pub type ErrorKind {
   /// The execution completed successfully without any compilation or VM faults.
   NoError

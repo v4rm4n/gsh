@@ -4,7 +4,7 @@
 // background actor orchestration, VM metadata inspection, logger modification, and exception trapping. 
 // All functions in this module delegate directly to Erlang's underlying `code` server or GSH's `ffi.erl` driver.
 
-// src/gsh/runtime/runtime.gleam
+// src/gsh/internal/runtime/runtime.gleam
 
 import etch/erlang/tty
 import gleam/dynamic.{type Dynamic}

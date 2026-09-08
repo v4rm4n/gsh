@@ -13,13 +13,13 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import gsh/input/display
-import gsh/input/key.{
+import gsh/internal/input/display
+import gsh/internal/input/key.{
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character, CtrlL,
   CtrlLeft, CtrlRight, End, Enter, Home, Tab,
 }
-import gsh/input/reader
-import gsh/input/terminal
+import gsh/internal/input/reader
+import gsh/internal/input/terminal
 
 /// Tracks the active state of an interactive prompt session.
 pub type Editor {
@@ -42,7 +42,6 @@ pub type Editor {
 /// Initializes the interactive editor state and initiates the blocking keystroke listener loop.
 /// 
 /// Returns the final, accumulated input string once the user submits execution via the `Enter` key.
-@internal
 pub fn read_line(
   prompt: String,
   history: List(String),

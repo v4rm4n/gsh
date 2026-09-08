@@ -10,7 +10,7 @@
 import contour
 import gleam/list
 import gleam/string
-import gsh/input/terminal
+import gsh/internal/input/terminal
 
 /// Clears the current line buffer and redraws the prompt along with the user's input.
 /// 
@@ -21,7 +21,6 @@ import gsh/input/terminal
 ///   temporarily bypassed to prevent broken ANSI color code rendering.
 /// * **ANSI Highlighting:** When quote counts are balanced, passes the buffer string 
 ///   to `contour.to_ansi()` for real-time Gleam syntax coloring before output.
-@internal
 pub fn render(prompt: String, buffer: String) -> Nil {
   terminal.clear_line()
 

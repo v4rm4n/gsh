@@ -11,7 +11,7 @@ import etch/erlang/input
 import etch/event
 import gleam/erlang/process
 import gleam/option.{None, Some}
-import gsh/input/key.{
+import gsh/internal/input/key.{
   type Key as GshKey, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace,
   Character, CtrlL, CtrlLeft, CtrlRight, End, Enter, Home, Tab, Unknown,
 }
@@ -24,7 +24,6 @@ import gsh/input/key.{
 ///   preventing high CPU utilization during idle REPL prompts.
 /// * Recursively discards non-keyboard terminal events (e.g., window size changes, mouse clicks) 
 ///   or stream parse errors until a valid key event is received.
-@internal
 pub fn read_key() -> GshKey {
   // `input.read()` returns Option(Result(Event, EventError))
   case input.read() {

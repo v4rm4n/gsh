@@ -6,18 +6,18 @@
 // and Erlang generation, and utilizing the `runtime` FFI to dynamically compile, 
 // load, and execute the resulting code directly in memory.
 
-// src/gsh/evaluator/runner.gleam
+// src/gsh/internal/evaluator/runner.gleam
 
 import gleam/option.{type Option, None}
 import gleam/string
-import gsh/evaluator/binding.{type Binding}
-import gsh/evaluator/formatter
-import gsh/evaluator/result.{
+import gsh/internal/evaluator/binding.{type Binding}
+import gsh/internal/evaluator/formatter
+import gsh/internal/evaluator/result.{
   type Evaluation, CompileError, Evaluation, NoError, RuntimeError,
 }
-import gsh/evaluator/style
-import gsh/evaluator/types
-import gsh/runtime/runtime
+import gsh/internal/evaluator/style
+import gsh/internal/evaluator/types
+import gsh/internal/runtime/runtime
 import shellout
 import simplifile
 
@@ -36,7 +36,6 @@ fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
 /// This is invoked by the `compile` command in the REPL, allowing developers 
 /// to rebuild their background application and trigger Erlang VM hot-reloads 
 /// without dropping their active shell session.
-@internal
 pub fn build_project() -> Result(String, #(Int, String)) {
   shellout.command(
     run: "gleam",
@@ -59,7 +58,6 @@ pub fn build_project() -> Result(String, #(Int, String)) {
 ///    native compiler FFI to compile it directly into RAM, bypassing `.beam` disk I/O.
 /// 3. **Execution:** Invokes the dynamically loaded `gsh_entry` function, capturing 
 ///    the evaluation success or gracefully intercepting Erlang VM runtime crashes.
-@internal
 pub fn run(
   binding: Option(Binding),
   module_name: String,

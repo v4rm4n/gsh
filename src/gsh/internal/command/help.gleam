@@ -4,15 +4,14 @@
 // providing a quick cheat sheet for REPL-specific utilities, inspection tools, 
 // and hot-reloading commands.
 
-// src/gsh/command/help.gleam
+// src/gsh/internal/command/help.gleam
 
-import gsh/input/terminal
+import gsh/internal/input/terminal
 
 /// Prints the GSH command reference menu to the console.
 /// It uses the custom `terminal.println` function to ensure newlines (`\n`) 
 /// are correctly translated to CRLF (`\r\n`) so the formatting doesn't break 
 /// while the terminal is in raw mode.
-@internal
 pub fn show() -> Nil {
   terminal.println(
     "
