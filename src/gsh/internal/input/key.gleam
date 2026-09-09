@@ -5,7 +5,7 @@
 // are captured as raw byte streams. This module provides an algebraic data type 
 // to abstract low-level TTY sequences into structured events for the editor.
 
-// src/gsh/input/key.gleam
+// src/gsh/internal/input/key.gleam
 
 /// Represents a parsed keystroke or control sequence captured from raw terminal input.
 pub type Key {

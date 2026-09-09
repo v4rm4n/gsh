@@ -9,24 +9,9 @@
 
 /// Generates the standard module header and base imports for dynamically generated 
 /// evaluation files.
-/// 
-/// **Import Injections:**
-/// * Always imports `gsh/input/terminal` so the injected `gsh_entry` function 
-///   can print results while honoring raw-mode formatting.
-/// * **Formatter (`with_formatter`):** Conditionally imports `gsh/evaluator/formatter` 
-///   under `gsh_internal_formatter` to process runtime inspect outputs.
-/// * **String (`with_string`):** Conditionally imports `gleam/string` under 
-///   `gsh_internal_string` to safely stringify expressions without namespace collisions.
-pub fn header(with_string: Bool, with_formatter: Bool) -> String {
-  "import gsh/internal/input/terminal\n"
-  <> case with_formatter {
-    True ->
-      "import gsh/internal/evaluator/formatter as gsh_internal_formatter\n"
-    False -> ""
+pub fn header(with_string: Bool, _with_formatter: Bool) -> String {
+  case with_string {
+    True -> "import gleam/string as gsh_internal_string\n\n"
+    False -> "\n"
   }
-  <> case with_string {
-    True -> "import gleam/string as gsh_internal_string\n"
-    False -> ""
-  }
-  <> "\n"
 }

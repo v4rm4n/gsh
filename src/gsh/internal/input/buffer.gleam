@@ -5,7 +5,7 @@
 // surface AST to determine if the statement is complete or requires additional 
 // input via the continuation prompt (`...>`).
 
-// src/gsh/input/buffer.gleam
+// src/gsh/internal/input/buffer.gleam
 
 import gleam/list
 import glexer

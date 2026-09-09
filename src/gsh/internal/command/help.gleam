@@ -16,14 +16,15 @@ pub fn show() -> Nil {
   terminal.println(
     "
 GSH builtins:
-
-  h()               Show this help
-  v()               Show version
-  k()               Exit shell
-  l()               List loaded bindings
+  :h  | :help      Show this help
+  :v  | :version   Show version
+  :q  | :quit      Exit shell
+  :b  | :bindings  List loaded bindings
+  :c  | :clear     Clear the terminal
+  :cc | :compile   Compile the project
+  :d  | :debug     Toggle AST and evaluator debug output
+  :hs | :history   Show the history of entered expressions
   pid(<pid string>) Create BEAM pid from string
-  compile           Rebuild host project and hot-reload imports
-  debug             Toggle AST and evaluator debug output
 ",
   )
 }

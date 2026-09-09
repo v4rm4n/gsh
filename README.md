@@ -3,27 +3,14 @@
 [![Package Version](https://img.shields.io/hexpm/v/gsh)](https://hex.pm/packages/gsh)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/gsh/)
 
-Copyright 2026 v4rm4n
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at [here](http://www.apache.org/licenses/LICENSE-2.0).
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
 > GSH is an interactive REPL for the [Gleam Programming Language](https://gleam.run/) written in Gleam and Erlang.
 
 ## Installation
-Add `gsh` to your project as a dependency:
+Add `gsh` to your project as a development dependency:
 
 ```bash
-gleam add gsh
+gleam add gsh --dev
 ```
-
-> ⚠ This was previously `gleam add gsh --dev` ⚠
 
 ## Usage
 `gsh` can either be used as a standalone REPL or a live-app bootloader.
@@ -37,7 +24,7 @@ gleam run -m gsh
 ```gleam
 Erlang/OTP 28 [erts-16.1.2] [source] [64-bit] [smp:16:16] [ds:16:16:10] [async-threads:1] [jit:ns]
 
-Interactive Gleam (GSH 1.1.5) - press Ctrl+C to exit (type h() ENTER for help)
+Interactive Gleam (GSH 1.1.6) - press Ctrl+C to exit (type :h ENTER for help)
 gsh(1)> import your_app/config
 ok
 gsh(2)> config.load()
@@ -84,9 +71,12 @@ After using Elixir's `iex`, OCaml's `utop` or even Rust's `evcxr`. I really want
 ## Demo
 - Tab-completion with auto suggestions
 ![Auto Suggestions](demo/auto_sug.png)
-
-- Input/Output syntax highlighting + Multi-line + Pattern matching
-![I/O mul](demo/io_mul.png)
+- Suggestions work for your project modules as well
+![Project Suggestions](demo/proj_sug.png)
+- Input/Output syntax highlighting + Multi-line support
+![I/O mul](demo/io_mul_1.png)
+- Compile your project before calling functions. Recompile after edits!
+![Compile](demo/compile.png)
 
 - Processes & built-ins (pid)
 ![proc_pid](demo/proc_pid.png)
@@ -133,9 +123,8 @@ Ok(IpQualityScore(True, "Success", 0, "US", "California", "Mountain View", "Goog
 [debug] latency: 1847.289ms | bindings: 2 | imports: 3
 ```
 
-### Latency & Type Resolution (Hot/Cold Path)
-- **Replaced Subprocess Overhead:** Gated gleam export package-interface calls behind needs_export (`is_import` || `is_type` || `is_function`). This eliminated the synchronous **~250ms** CLI process on standard expressions, bringing Hot Path evaluation down to **~20ms**.
-- **Added Fast Fallback Inference:** Implemented `infer_or_get_type` in types.gleam to instantly parse primitives (`Int`, `Float`, `Bool`, `String`), operators, and custom constructors locally without spawning an OS shell.
+### Architecture & Dependency Fixes
+- **True Dev-Dependency Support:** Replaced dynamic `import gsh/...` statements in generated evaluation files with direct `@external(erlang, ...)` FFI bindings. This completely bypasses the Gleam compiler's dependency graph checks for temporary files, allowing GSH to run purely as a `--dev` dependency without throwing "App importing dev dependency" errors or polluting the host's production build.
 
 ### Compiler Directory & Path Scrubbing
 - **Replaced File Location (test/ $\rightarrow$ src/):** Moved temporary `gsh_eval_X.gleam` outputs to `src/` so the compiler includes them in `package_interface.json`.
@@ -145,12 +134,10 @@ Ok(IpQualityScore(True, "Success", 0, "US", "California", "Mountain View", "Goog
 - **Eliminated Blank Line Bugs:** Updated debug_output formatting logic in ` evaluator.gleam` so `"\n"` isn't concatenated when debug mode is disabled.
 
 ### Error Formatting & Decoder Fixes
-- **Dev Dependency Warning Suppressor:** Added `filter_dev_dep_errors` to `formatter.gleam` to strip out compiler warnings triggered when dynamic `src/` application modules import internal gsh runtime packages.
-
 - **Aligned Decoder Error Types:** Replaced `Nil` mismatch errors in `runner.gleam` with `simplifile.FileError` types to ensure compiler type parity across disk reads.
 
 ## How it works
-### In-RAM Fast Compilation Pipeline (Sub-20ms Latency)
+### In-RAM Fast Compilation Pipeline (Sub-50ms Latency)
 Rather than spawning heavy OS subprocesses with `gleam build` or writing `.beam` files to disk, GSH compiles and executes code directly in memory:
 
   - **Fast AST Emission:** Executes gleam compile-package --no-beam to instantly convert Gleam code into raw Erlang (.erl) source, bypassing disk artifact writes.
@@ -210,3 +197,14 @@ Contributions are massively appreciated! A REPL would be a nice to have tool in 
 
 ## License
 This project is licensed under the [Apache-2.0](LICENSE).
+
+Copyright 2026 v4rm4n
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at [here](http://www.apache.org/licenses/LICENSE-2.0).
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

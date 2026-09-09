@@ -39,7 +39,6 @@ pub fn evaluate(
   types: List(String),
   functions: List(String),
   debug: Bool,
-  show_labels: Bool,
   prompt_count: Int,
 ) -> Evaluation {
   let module_name = "gsh_eval_" <> int.to_string(prompt_count)
@@ -139,7 +138,6 @@ pub fn evaluate(
         types,
         functions,
         debug,
-        show_labels,
         module_name,
         evaluator_path,
         parsed_binding,
@@ -160,7 +158,6 @@ fn evaluate_loop(
   types: List(String),
   functions: List(String),
   debug: Bool,
-  show_labels: Bool,
   module_name: String,
   evaluator_path: String,
   parsed_binding: option.Option(Binding),
@@ -188,14 +185,7 @@ fn evaluate_loop(
     Ok(_) -> {
       let start_time = runtime.system_time()
       let needs_export = is_import || is_type || is_function
-      let result =
-        runner.run(
-          parsed_binding,
-          module_name,
-          input,
-          needs_export,
-          show_labels,
-        )
+      let result = runner.run(parsed_binding, module_name, input, needs_export)
       let elapsed_us = runtime.system_time() - start_time
       let _ = simplifile.delete(evaluator_path)
 
@@ -264,7 +254,6 @@ fn evaluate_loop(
                     types,
                     functions,
                     debug,
-                    show_labels,
                     module_name,
                     evaluator_path,
                     parsed_binding,
@@ -370,15 +359,20 @@ fn make_function_source(
   <> "\n\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: \"// Function defined\")\n"
+  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"// Function defined\")\n"
   <> "}\n"
 }
 
 fn imports_source(imports: List(String)) -> String {
   let base =
-    "import gsh/internal/runtime/store as gsh_store\n"
-    <> "import gsh/internal/runtime/runtime as gsh_internal_runtime\n"
-    <> "import simplifile as gsh_internal_simplifile\n"
+    "// Direct Erlang FFI to bypass Gleam dev-dependency rules\n"
+    <> "@external(erlang, \"gsh@internal@runtime@store\", \"put\")\n"
+    <> "fn gsh_store_put(key: String, value: a) -> a\n\n"
+    <> "@external(erlang, \"gsh@internal@runtime@store\", \"cache\")\n"
+    <> "fn gsh_store_cache(key: String, fallback: fn() -> a) -> a\n\n"
+    <> "@external(erlang, \"gsh@internal@runtime@runtime\", \"pid_from_string\")\n"
+    <> "fn gsh_pid_from_string(id: String) -> a\n\n"
+    <> "import simplifile\n\n"
 
   let merged = parser.merge_imports(imports)
 
@@ -405,8 +399,7 @@ fn types_source(types: List(String)) -> String {
 }
 
 fn functions_source(functions: List(String)) -> String {
-  let builtins =
-    "pub fn pid(id: String) { gsh_internal_runtime.pid_from_string(id) }"
+  let builtins = "pub fn pid(id: String) { gsh_pid_from_string(id) }"
 
   case functions {
     [] -> builtins <> "\n\n"
@@ -431,7 +424,7 @@ fn make_type_source(
   <> "\n\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
+  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
   <> "}\n"
 }
 
@@ -451,7 +444,7 @@ fn make_import_source(
   <> "\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  terminal.println(\"ok\")\n"
+  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
   <> "}\n"
 }
 
@@ -473,7 +466,7 @@ fn make_expression_source(
   <> expression
   <> "\n"
   <> "  }\n"
-  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect(gsh_internal_expr))\n"
+  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect(gsh_internal_expr))\n"
   <> "  gsh_internal_expr\n"
   <> "}\n"
 }
@@ -509,7 +502,7 @@ fn make_normal_binding_source(
       <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
       <> generate_current_binding(binding)
-      <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect("
+      <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect("
       <> name
       <> "))\n"
       <> "  "
@@ -536,7 +529,7 @@ fn make_complex_binding_source(
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> generate_current_binding(binding)
-  <> "  let _ = gsh_internal_simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
+  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
   <> "}\n"
 }
 
@@ -554,7 +547,7 @@ fn make_assert_source(
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> generate_current_binding(binding)
-  <> "  terminal.print(\"ok\")\n"
+  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
   <> "}\n"
 }
 
@@ -565,7 +558,7 @@ fn generate_current_binding(binding: Binding) -> String {
   "  "
   <> binding.source
   <> "\n"
-  <> "  let _ = gsh_store.put(\""
+  <> "  let _ = gsh_store_put(\""
   <> cache_key
   <> "\", "
   <> capture
@@ -578,7 +571,7 @@ fn generate_historical_binding(binding: Binding) -> String {
 
   "  let "
   <> capture
-  <> " = gsh_store.cache(\""
+  <> " = gsh_store_cache(\""
   <> cache_key
   <> "\", fn() {\n"
   <> "    "

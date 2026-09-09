@@ -15,7 +15,8 @@
     fix_logger_staircase/0, 
     format/2,
     compile_and_load/2,
-    run_entry/2
+    run_entry/2,
+    ensure_code_paths/0
 ]).
 
 %% Returns the current system time in microseconds to guarantee 
@@ -177,7 +178,16 @@ run_entry(ModuleBin, FunctionBin) ->
         Result = Module:Function(),
         {ok, Result}
     catch
-        Class:Reason ->
-            FormattedError = unicode:characters_to_binary(io_lib:format("~p:~p", [Class, Reason])),
+        Class:Reason:Stacktrace ->
+            FormattedError = unicode:characters_to_binary(
+                io_lib:format("~p:~p~n~p", [Class, Reason, Stacktrace])
+            ),
             {error, FormattedError}
     end.
+
+ensure_code_paths() ->
+    case filelib:wildcard("build/dev/erlang/*/ebin") of
+        [] -> ok;
+        Paths -> lists:foreach(fun(P) -> code:add_patha(P) end, Paths)
+    end,
+    ok.

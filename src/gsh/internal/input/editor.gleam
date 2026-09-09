@@ -6,7 +6,7 @@
 // 2D terminal coordinates, rendering floating autocompletion menus, and managing interactive 
 // command history navigation.
 
-// src/gsh/input/editor.gleam
+// src/gsh/iinternal/nput/editor.gleam
 
 import gleam/int
 import gleam/list
@@ -527,7 +527,7 @@ fn get_current_word(text: String) -> String {
 /// Determines whether a given character grapheme is valid inside a Gleam variable, module, or function identifier.
 fn is_identifier_char(c: String) -> Bool {
   string.contains(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.",
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./",
     c,
   )
 }

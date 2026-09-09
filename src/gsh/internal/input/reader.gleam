@@ -5,7 +5,7 @@
 // signals (such as window resizes or mouse movements), intercept control chord modifiers 
 // (e.g., `Ctrl+L` or `Ctrl+Left`), and map raw events into the shell's structured `Key` domain.
 
-// src/gsh/input/reader.gleam
+// src/gsh/internal/input/reader.gleam
 
 import etch/erlang/input
 import etch/event

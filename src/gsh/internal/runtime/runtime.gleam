@@ -99,3 +99,6 @@ pub fn hot_reload(module_path: String) -> Nil {
   let _ = ffi_load_file(mod_atom)
   Nil
 }
+
+@external(erlang, "ffi", "ensure_code_paths")
+pub fn ensure_code_paths() -> Nil

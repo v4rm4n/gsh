@@ -62,7 +62,6 @@ pub type ShellState {
     /// Toggles verbose output for debugging the internal AST parsing and 
     /// evaluation pipeline.
     debug: Bool,
-    show_labels: Bool,
   )
 }
 
@@ -73,6 +72,8 @@ pub type ShellState {
 /// 3. Injects a custom logger to prevent staircasing in background logs.
 /// 4. Places the terminal into raw mode and starts the recursive REPL loop.
 pub fn main() -> Nil {
+  runtime.ensure_code_paths()
+
   // 1. Clean up any orphaned `gsh_eval_X.gleam` files from previous crashes
   case simplifile.read_directory("src") {
     Ok(files) -> {
@@ -130,7 +131,7 @@ pub fn main() -> Nil {
   banner()
 
   // Initialized with empty lists
-  shell_loop(ShellState(1, [], [], [], [], [], False, False))
+  shell_loop(ShellState(1, [], [], [], [], [], False))
 
   let assert Ok(_) = tty.exit_raw()
 
@@ -141,7 +142,7 @@ pub fn main() -> Nil {
 fn banner() -> Nil {
   terminal.println(system_version())
   format.printf(
-    "Interactive Gleam (GSH ~s) - press Ctrl+C to exit (type h() ENTER for help)",
+    "Interactive Gleam (GSH ~s) - press Ctrl+C to exit (type :h ENTER for help)",
     app_version(atom.create("gsh")),
   )
   terminal.println("")
@@ -164,7 +165,6 @@ fn shell_loop(state: ShellState) -> Nil {
         state.history,
         state.functions,
         state.debug,
-        state.show_labels,
       ))
 
     _ -> handle_input(input, state)
@@ -195,7 +195,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
-        state.show_labels,
       ))
 
     command.Exit -> {
@@ -214,7 +213,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
-        state.show_labels,
       ))
     }
 
@@ -252,7 +250,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
-        state.show_labels,
       ))
     }
 
@@ -294,7 +291,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         state.debug,
-        state.show_labels,
       ))
     }
 
@@ -314,25 +310,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         history,
         state.functions,
         new_debug,
-        state.show_labels,
       ))
-    }
-
-    command.ToggleLabels -> {
-      let new_show_labels = !state.show_labels
-      let status = case new_show_labels {
-        True -> "enabled"
-        False -> "disabled"
-      }
-      terminal.println("Field labels " <> status)
-
-      shell_loop(
-        ShellState(
-          ..state,
-          prompt_count: state.prompt_count + 1,
-          show_labels: new_show_labels,
-        ),
-      )
     }
 
     command.NotCommand -> {
@@ -352,7 +330,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             history,
             state.functions,
             state.debug,
-            state.show_labels,
           ))
         }
 
@@ -372,7 +349,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               type_sources,
               function_sources,
               state.debug,
-              state.show_labels,
               state.prompt_count,
             )
 
@@ -459,7 +435,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             history,
             functions,
             state.debug,
-            state.show_labels,
           ))
         }
       }
@@ -502,10 +477,13 @@ fn read_command(prompt: String, state: ShellState) -> String {
       list.append([alias], formatted_functions)
     })
 
+  let import_completions = get_import_completions()
+
   let completions =
     keywords
     |> list.append(variables)
     |> list.append(module_completions)
+    |> list.append(import_completions)
 
   read_lines(prompt, state.history, "", True, completions)
 }
@@ -573,5 +551,30 @@ fn resolve_alias(alias: String, imports: List(String)) -> String {
     }
     // Fallback: If not imported, assume they typed the full path (e.g. `h gleam/list`)
     Error(_) -> alias
+  }
+}
+
+// Add this helper to scan the src directory
+fn get_import_completions() -> List(String) {
+  case simplifile.get_files("src") {
+    Ok(files) -> {
+      list.filter_map(files, fn(file) {
+        case string.ends_with(file, ".gleam") {
+          True -> {
+            let module =
+              file
+              |> string.replace("./src/", "")
+              // Catch the dot-slash
+              |> string.replace("src/", "")
+              // Catch the standard
+              |> string.replace(".gleam", "")
+
+            Ok(module)
+          }
+          False -> Error(Nil)
+        }
+      })
+    }
+    Error(_) -> []
   }
 }

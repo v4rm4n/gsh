@@ -7,7 +7,7 @@
 // This module ensures that bindings are computed exactly once during their initial evaluation 
 // and retrieved directly from BEAM process memory in subsequent prompts.
 
-// src/gsh/runtime/store.gleam
+// src/gsh/internal/runtime/store.gleam
 
 /// Stores a dynamically typed value in the Erlang Process Dictionary under the specified string key.
 /// Returns the stored value directly to support inline assignments within generated code.

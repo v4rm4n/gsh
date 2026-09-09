@@ -5,7 +5,7 @@
 // using the `contour` library, while applying defensive rendering heuristics 
 // to prevent ANSI escaping artifacts during incomplete string inputs.
 
-// src/gsh/input/display.gleam
+// src/gsh/internal/input/display.gleam
 
 import contour
 import gleam/list

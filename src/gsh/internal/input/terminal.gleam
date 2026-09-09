@@ -5,7 +5,7 @@
 // for rendering output, handling newline translations (`\r\n`), managing visibility, 
 // and controlling 2D hardware cursor movement via ANSI control codes.
 
-// src/gsh/input/terminal.gleam
+// src/gsh/internal/input/terminal.gleam
 
 import gleam/int
 import gleam/io
