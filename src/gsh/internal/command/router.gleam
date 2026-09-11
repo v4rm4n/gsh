@@ -31,6 +31,10 @@ pub type CommandResult {
   /// The user requested to toggle verbose AST and evaluator debugging logs.
   ToggleDebug
 
+  Logs
+
+  Obs
+
   /// The user requested documentation for a specific module or function target 
   /// (e.g., `h gleam/list` or `h list.map`).
   Help(String)
@@ -57,6 +61,10 @@ pub fn handle(
 
   case trimmed {
     ":d" | ":debug" -> ToggleDebug
+
+    ":logs" -> Logs
+
+    ":obs" -> Obs
 
     ":h" | ":help" -> {
       help.show()

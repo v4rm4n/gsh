@@ -32,6 +32,8 @@ import gsh/internal/evaluator/parser
 import gsh/internal/evaluator/runner
 import gsh/internal/input/buffer
 import gsh/internal/input/editor
+import gsh/internal/input/key
+import gsh/internal/input/reader
 import gsh/internal/input/terminal
 import gsh/internal/runtime/runtime.{app_version, system_version}
 import simplifile
@@ -123,7 +125,7 @@ pub fn main() -> Nil {
   }
 
   // 3. Wrap the logger to prevent staircasing in background jobs
-  runtime.fix_logger_staircase()
+  runtime.setup_logger()
 
   // 4. Start the shell as usual
   let assert Ok(_) = tty.enter_raw()
@@ -313,6 +315,51 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       ))
     }
 
+    command.Logs -> {
+      // 1. Clear the screen for the dashboard
+      terminal.clear_screen()
+
+      // 2. Fetch the logs from the ETS buffer (via the FFI we added)
+      let logs = runtime.get_logs()
+
+      // 3. Draw the UI
+      draw_log_box(logs)
+
+      // 4. Wait for the user to press 'q'
+      wait_for_q()
+
+      // 5. Clear the screen again and return to the normal REPL state
+      terminal.clear_screen()
+
+      shell_loop(ShellState(
+        state.prompt_count,
+        // Don't increment prompt count since it wasn't an evaluation
+        state.bindings,
+        state.imports,
+        state.types,
+        history,
+        state.functions,
+        state.debug,
+      ))
+    }
+
+    command.Obs -> {
+      case runtime.start_observer() {
+        Ok(_) -> terminal.println("Launching Observer GUI...")
+        Error(err) -> terminal.println("\u{001b}[31merror:\u{001b}[0m " <> err)
+      }
+
+      shell_loop(ShellState(
+        state.prompt_count,
+        state.bindings,
+        state.imports,
+        state.types,
+        history,
+        state.functions,
+        state.debug,
+      ))
+    }
+
     command.NotCommand -> {
       let is_duplicate_import =
         string.starts_with(input, "import ")
@@ -337,17 +384,13 @@ fn handle_input(input: String, state: ShellState) -> Nil {
           // Exit raw mode so side effects print normally!
           let assert Ok(_) = tty.exit_raw()
 
-          // Pass only the source strings into the evaluator
-          let type_sources = list.map(state.types, fn(t) { t.1 })
-          let function_sources = list.map(state.functions, fn(f) { f.1 })
-
           let result =
             evaluator.evaluate(
               input,
               state.bindings,
               state.imports,
-              type_sources,
-              function_sources,
+              state.types,
+              state.functions,
               state.debug,
               state.prompt_count,
             )
@@ -554,9 +597,9 @@ fn resolve_alias(alias: String, imports: List(String)) -> String {
   }
 }
 
-// Add this helper to scan the src directory
 fn get_import_completions() -> List(String) {
-  case simplifile.get_files("src") {
+  // 1. Scan local project source files
+  let local_modules = case simplifile.get_files("src") {
     Ok(files) -> {
       list.filter_map(files, fn(file) {
         case string.ends_with(file, ".gleam") {
@@ -564,9 +607,7 @@ fn get_import_completions() -> List(String) {
             let module =
               file
               |> string.replace("./src/", "")
-              // Catch the dot-slash
               |> string.replace("src/", "")
-              // Catch the standard
               |> string.replace(".gleam", "")
 
             Ok(module)
@@ -576,5 +617,53 @@ fn get_import_completions() -> List(String) {
       })
     }
     Error(_) -> []
+  }
+
+  // 2. Scan third-party dependencies downloaded by Gleam
+  let package_modules = case simplifile.get_files("build/packages") {
+    Ok(files) -> {
+      list.filter_map(files, fn(file) {
+        case string.ends_with(file, ".gleam") {
+          True -> {
+            // A file path looks like: build/packages/gleam_stdlib/src/gleam/list.gleam
+            // We split on "/src/" and keep everything after it.
+            case string.split_once(file, on: "/src/") {
+              Ok(#(_before, after)) -> Ok(string.replace(after, ".gleam", ""))
+              Error(_) -> Error(Nil)
+            }
+          }
+          False -> Error(Nil)
+        }
+      })
+    }
+    Error(_) -> []
+  }
+
+  // 3. Combine and deduplicate the list
+  list.append(local_modules, package_modules)
+  |> list.unique()
+}
+
+/// Prints the captured logs cleanly to the screen without heavy borders.
+fn draw_log_box(logs: List(String)) -> Nil {
+  terminal.println("\u{001b}[1m--- Background Logs ---\u{001b}[0m\n")
+
+  case logs {
+    [] -> terminal.println("\u{001b}[90mNo logs captured yet.\u{001b}[0m")
+    _ -> {
+      list.each(logs, fn(log) { terminal.println(string.trim(log)) })
+    }
+  }
+
+  terminal.println("\n\u{001b}[90mPress 'q' to return to REPL\u{001b}[0m")
+}
+
+/// A blocking recursive loop that swallows all keystrokes until 'q' is pressed.
+fn wait_for_q() -> Nil {
+  let pressed = reader.read_key()
+
+  case pressed {
+    key.Character("q") | key.Character("Q") -> Nil
+    _ -> wait_for_q()
   }
 }

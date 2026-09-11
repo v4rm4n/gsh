@@ -81,60 +81,27 @@ After using Elixir's `iex`, OCaml's `utop` or even Rust's `evcxr`. I really want
 - Processes & built-ins (pid)
 ![proc_pid](demo/proc_pid.png)
 
-## Latest Bugfixes
+## Feature highlights
 
-### State issues
-- **Automatic Stale Binding Pruning (:cc):** Fixed compilation failures after host-code hot-reloading where historical variable assignments referenced renamed or removed host functions. `evaluator.gleam` now intercepts compiler failures, isolates broken historical bindings, and purges them from session scope automatically.
+1. **Tab-autocompletion & suggestions:**
 
-```gleam
-// Defined here
-gsh(7)> let resp = client.check_ip("8.8.8.8", ctx)
-Ok(Response(...)) : Result(Response(String), IpqsError)
+Press \<TAB> during imports or function calls to get completion & suggestions.
 
-// check_ip --> renamed to --> do_check_ip
+2. **Stateless session history:**
 
-gsh(20)> client.do_check_ip("8.8.8.8", ctx)
-error: Unknown module value
-   ┌─ REPL:26:23
-   │
-26 │     let resp = client.check_ip("8.8.8.8", ctx)
-   │                       ^^^^^^^^ Did you mean `do_check_ip`?
+Use the \<up and down arrows> to navigate through previously entered commands. History isn't saved after the session ends.
 
-The module `example/integrations/ipqs/client` does not have a `check_ip`
-value.
-```
+3. **Word-wise navigation:**
 
-- **Lexical Scope Resynchronization:** Replaced manual state tracking with dynamic `active_bindings` propagation in `gsh.gleam`, ensuring session state stays synchronized across hot-code swaps without dropping active shell history.
+Ctrl+\<left or right arrows> allow word-wise navigation.
 
+4. **Dynamic function redefinition:**
 
-```gleam
-gsh(8)> client.do_check_ip("8.8.8.8", ctx)
-Ok(IpQualityScore(True, "Success", 0, "US", "California", "Mountain View", "Google DNS", False, "America/Los_Angeles", "dns.google", False, False, False, False, False, False, False, "N/A", 37.38999939, -122.06999969)) : Result(IpQualityScore, IpqsError)
-[debug] latency: 2119.150ms | bindings: 2 | imports: 3
-gsh(9)> :cc
-  Compiling t4z3r
-   Compiled in 0.22s
+Swap out function logic on the fly without restarting the shell. While the Gleam compiler strictly forbids duplicate function names within a module, GSH acts as a dynamic REPL layer—automatically pruning your historical state to allow Elixir-style rapid prototyping.
 
-// do_check_ip --> renamed to --> check_ip
+5. **Observer GUI support:**
 
-Ok (Imports hot-reloaded)
-gsh(10)> client.check_ip("8.8.8.8", ctx)
-Ok(IpQualityScore(True, "Success", 0, "US", "California", "Mountain View", "Google DNS", False, "America/Los_Angeles", "dns.google", False, False, False, False, False, False, False, "N/A", 37.38999939, -122.06999969))
-[debug] latency: 1847.289ms | bindings: 2 | imports: 3
-```
-
-### Architecture & Dependency Fixes
-- **True Dev-Dependency Support:** Replaced dynamic `import gsh/...` statements in generated evaluation files with direct `@external(erlang, ...)` FFI bindings. This completely bypasses the Gleam compiler's dependency graph checks for temporary files, allowing GSH to run purely as a `--dev` dependency without throwing "App importing dev dependency" errors or polluting the host's production build.
-
-### Compiler Directory & Path Scrubbing
-- **Replaced File Location (test/ $\rightarrow$ src/):** Moved temporary `gsh_eval_X.gleam` outputs to `src/` so the compiler includes them in `package_interface.json`.
-- **Cleaned Up Output Scrubbing:** Updated `formatter.gleam` to strip `./src/` path prefixes from compiler error traces (rendering as `REPL:line:col`), and updated startup sweeps in `gsh.gleam` to purge leftover orphan files from `src/`.
-
-### Terminal Rendering & Output Alignment
-- **Eliminated Blank Line Bugs:** Updated debug_output formatting logic in ` evaluator.gleam` so `"\n"` isn't concatenated when debug mode is disabled.
-
-### Error Formatting & Decoder Fixes
-- **Aligned Decoder Error Types:** Replaced `Nil` mismatch errors in `runner.gleam` with `simplifile.FileError` types to ensure compiler type parity across disk reads.
+Provided you have Erlang with wxwidgets support, `:obs` will open the Observer GUI.
 
 ## How it works
 ### In-RAM Fast Compilation Pipeline (Sub-50ms Latency)

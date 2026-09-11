@@ -36,8 +36,8 @@ pub fn evaluate(
   input: String,
   bindings: List(Binding),
   imports: List(String),
-  types: List(String),
-  functions: List(String),
+  types: List(#(String, String)),
+  functions: List(#(String, String)),
   debug: Bool,
   prompt_count: Int,
 ) -> Evaluation {
@@ -155,8 +155,8 @@ fn evaluate_loop(
   input: String,
   bindings: List(Binding),
   imports: List(String),
-  types: List(String),
-  functions: List(String),
+  types: List(#(String, String)),
+  functions: List(#(String, String)),
   debug: Bool,
   module_name: String,
   evaluator_path: String,
@@ -167,13 +167,28 @@ fn evaluate_loop(
   is_function: Bool,
   bindings_pruned: Bool,
 ) -> Evaluation {
+  // 1. Drop the historical version if we are redefining it right now!
+  let clean_functions = case is_function, parsed_def_name {
+    True, option.Some(name) -> list.filter(functions, fn(f) { f.0 != name })
+    _, _ -> functions
+  }
+
+  let clean_types = case is_type, parsed_def_name {
+    True, option.Some(name) -> list.filter(types, fn(t) { t.0 != name })
+    _, _ -> types
+  }
+
+  // 2. Extract just the raw source code strings for the compiler
+  let function_sources = list.map(clean_functions, fn(f) { f.1 })
+  let type_sources = list.map(clean_types, fn(t) { t.1 })
+
   let source =
     build_source(
       input,
       bindings,
       imports,
-      types,
-      functions,
+      function_sources,
+      type_sources,
       is_import,
       is_type,
       is_function,

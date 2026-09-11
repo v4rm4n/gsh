@@ -61,10 +61,14 @@ pub fn boot_app(module: String) -> Result(Dynamic, String)
 @external(erlang, "ffi", "pid_from_string")
 pub fn pid_from_string(pid: String) -> process.Pid
 
-/// Intercepts and wraps the default Erlang logger output handler to convert `\n` into `\r\n`, 
-/// preventing log staircasing artifacts when background processes log during raw-mode TTY sessions.
-@external(erlang, "ffi", "fix_logger_staircase")
-pub fn fix_logger_staircase() -> Nil
+@external(erlang, "ffi", "setup_logger")
+pub fn setup_logger() -> Nil
+
+@external(erlang, "ffi", "get_logs")
+pub fn get_logs() -> List(String)
+
+@external(erlang, "ffi", "start_observer")
+pub fn start_observer() -> Result(Nil, String)
 
 /// Compiles an Erlang source file (`.erl`) directly into memory and loads the resulting code 
 /// into the BEAM code server without writing a `.beam` file to disk.

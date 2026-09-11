@@ -12,8 +12,10 @@
     get_args/0,
     boot_app/1,
     pid_from_string/1,
-    fix_logger_staircase/0, 
-    format/2,
+    setup_logger/0,
+    get_logs/0,
+    log/2,
+    start_observer/0,
     compile_and_load/2,
     run_entry/2,
     ensure_code_paths/0
@@ -117,38 +119,55 @@ boot_app(ModuleNameBin) ->
 pid_from_string(Bin) ->
     list_to_pid(binary_to_list(Bin)).
 
-%% Wraps the active logger formatter to natively inject \r\n 
-%% so background logs render correctly while the terminal is in raw mode.
-fix_logger_staircase() ->
-    case logger:get_handler_config(default) of
-        {ok, #{formatter := {Mod, Config}} = HandlerConfig} ->
-            ProxyState = #{proxy_mod => Mod, proxy_config => Config},
-            NewConfig = HandlerConfig#{formatter => {?MODULE, ProxyState}},
-            logger:set_handler_config(default, NewConfig);
-        _ -> ok
+%% Creates an in-memory table and reroutes logs into it
+setup_logger() ->
+    %% Create a public, named ring-buffer in memory
+    ets:new(gsh_logs, [named_table, public, ordered_set]),
+    
+    %% Kill the default handler that floods the screen
+    logger:remove_handler(default),
+    
+    %% Add our custom handler that traps logs in ETS
+    logger:add_handler(gsh_ui, ?MODULE, #{
+        formatter => {logger_formatter, #{
+            single_line => true,
+            %% Explicitly inject the PID into the log string
+            template => [time, " ", pid, " [", level, "] ", msg]
+        }}
+    }).
+
+%% The callback Erlang triggers every time a background app logs something
+log(LogEvent, Config) ->
+    %% Format the log using standard Erlang tools
+    {Formatter, FormatterConfig} = maps:get(formatter, Config),
+    Formatted = Formatter:format(LogEvent, FormatterConfig),
+    
+    Bin = unicode:characters_to_binary(Formatted, utf8),
+    Clean = binary:replace(Bin, <<"\n">>, <<>>, [global]),
+    
+    %% Store it in ETS with a timestamp as the key so it sorts chronologically
+    Time = erlang:system_time(microsecond),
+    ets:insert(gsh_logs, {Time, Clean}),
+    
+    %% Keep only the last 50 logs to prevent memory leaks
+    case ets:info(gsh_logs, size) > 50 of
+        true -> ets:delete(gsh_logs, ets:first(gsh_logs));
+        false -> ok
     end.
 
-%% Fixed: The callback for our proxy formatter must be named format/2
-format(LogEvent, #{proxy_mod := OriginalMod, proxy_config := OriginalConfig}) ->
+%% Called by the Gleam UI to fetch the logs to draw in the box
+get_logs() ->
+    Logs = ets:tab2list(gsh_logs),
+    [Text || {_Time, Text} <- Logs].
+
+%% Launches the native BEAM diagnostic GUI in the background
+start_observer() ->
     try
-        %% Call the original formatter (preserves Gleam's colors and Logfmt!)
-        Formatted = OriginalMod:format(LogEvent, OriginalConfig),
-        
-        %% Fixed: Safely handle deep unicode lists (Gleam strings)
-        Bin = unicode:characters_to_binary(Formatted, utf8),
-        
-        case Bin of
-            B when is_binary(B) ->
-                %% Strip any existing \r to prevent doubling up, then replace \n with \r\n
-                NoCr = binary:replace(B, <<"\r">>, <<>>, [global]),
-                binary:replace(NoCr, <<"\n">>, <<"\r\n">>, [global]);
-            _ -> 
-                Formatted %% Fallback if conversion fails
-        end
+        observer:start(),
+        {ok, nil}
     catch
         _:_ -> 
-            %% Failsafe to guarantee the logger never takes down the VM
-            <<"[GSH] Formatter Proxy Error\r\n">>
+            {error, <<"Erlang VM was compiled without wxWidgets support.">>}
     end.
 
 %% Compiles an .erl file directly into RAM and hot-loads it into the VM
