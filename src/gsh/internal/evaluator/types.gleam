@@ -220,13 +220,11 @@ fn infer_complex_expression(
   expr: String,
   json_string: String,
 ) -> Result(String, Nil) {
-  // Strip syntax arrows so `-` doesn't match `->` or `<-`
   let clean_expr =
     expr
     |> string.replace("->", " ")
     |> string.replace("<-", " ")
 
-  // Extract the last non-empty line (the return value of block/case statements)
   let last_line =
     clean_expr
     |> string.split("\n")
@@ -235,6 +233,7 @@ fn infer_complex_expression(
     |> list.last
     |> result.unwrap(clean_expr)
 
+  // 1. Obvious literals
   case
     string.starts_with(last_line, "\"") || string.ends_with(last_line, "\"")
   {
@@ -248,43 +247,56 @@ fn infer_complex_expression(
             Error(_) ->
               case float.parse(last_line) {
                 Ok(_) -> Ok("Float")
-                Error(_) ->
-                  case
-                    string.contains(clean_expr, "+.")
-                    || string.contains(clean_expr, "-.")
-                    || string.contains(clean_expr, "*.")
-                    || string.contains(clean_expr, "/.")
-                  {
-                    True -> Ok("Float")
-                    False ->
-                      case
-                        string.contains(clean_expr, "+")
-                        || string.contains(clean_expr, "-")
-                        || string.contains(clean_expr, "*")
-                        || string.contains(clean_expr, "/")
-                        || string.contains(clean_expr, "%")
-                      {
-                        True -> Ok("Int")
-                        False ->
-                          case string.contains(clean_expr, "<>") {
-                            True -> Ok("String")
-                            False ->
-                              case
-                                string.contains(clean_expr, "==")
-                                || string.contains(clean_expr, "!=")
-                                || string.contains(clean_expr, "&&")
-                                || string.contains(clean_expr, "||")
-                              {
-                                True -> Ok("Bool")
-                                False ->
-                                  lookup_in_package_interface(
-                                    last_line,
-                                    json_string,
-                                  )
-                              }
-                          }
+                Error(_) -> {
+                  // 2. Try the Package Interface first!
+                  case lookup_in_package_interface(last_line, json_string) {
+                    Ok(t) -> Ok(t)
+                    Error(_) -> {
+                      // 3. Fallback Heuristics (Only if it DOES NOT look like a function call)
+                      case string.ends_with(last_line, ")") {
+                        True -> Error(Nil)
+                        // It's a function call but we don't have the JSON. Don't guess.
+                        False -> guess_math_operators(clean_expr)
                       }
+                    }
                   }
+                }
+              }
+          }
+      }
+  }
+}
+
+// Helper to isolate the math guessing
+fn guess_math_operators(clean_expr: String) -> Result(String, Nil) {
+  case
+    string.contains(clean_expr, "+.")
+    || string.contains(clean_expr, "-.")
+    || string.contains(clean_expr, "*.")
+    || string.contains(clean_expr, "/.")
+  {
+    True -> Ok("Float")
+    False ->
+      case
+        string.contains(clean_expr, "+")
+        || string.contains(clean_expr, "-")
+        || string.contains(clean_expr, "*")
+        || string.contains(clean_expr, "/")
+        || string.contains(clean_expr, "%")
+      {
+        True -> Ok("Int")
+        False ->
+          case string.contains(clean_expr, "<>") {
+            True -> Ok("String")
+            False ->
+              case
+                string.contains(clean_expr, "==")
+                || string.contains(clean_expr, "!=")
+                || string.contains(clean_expr, "&&")
+                || string.contains(clean_expr, "||")
+              {
+                True -> Ok("Bool")
+                False -> Error(Nil)
               }
           }
       }

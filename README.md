@@ -103,6 +103,10 @@ Swap out function logic on the fly without restarting the shell. While the Gleam
 
 Provided you have Erlang with wxwidgets support, `:obs` will open the Observer GUI.
 
+6. **Automated configuration (`.gsh.toml`):**
+
+Pre-load your favorite stdlib or project modules and declare background applications to launch automatically on startup. Eliminate repetitive CLI flags and setup typing—modules like gleam/string or gleam/list are ready on line 1, and your OTP services boot instantly in the background.
+
 ## How it works
 ### In-RAM Fast Compilation Pipeline (Sub-50ms Latency)
 Rather than spawning heavy OS subprocesses with `gleam build` or writing `.beam` files to disk, GSH compiles and executes code directly in memory:

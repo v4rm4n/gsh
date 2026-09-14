@@ -25,6 +25,7 @@ import gleam/list
 import gleam/option
 import gleam/string
 import gsh/internal/command/router as command
+import gsh/internal/config
 import gsh/internal/evaluator/binding
 import gsh/internal/evaluator/docs
 import gsh/internal/evaluator/evaluator
@@ -92,18 +93,25 @@ pub fn main() -> Nil {
     Error(_) -> Nil
   }
 
-  // 2. Intercept ALL CLI arguments and boot them
-  let args = runtime.get_args()
+  // 2. Wrap the logger to prevent staircasing in background jobs
+  runtime.setup_logger()
 
-  case list.is_empty(args) {
+  // 3. Load configuration from .gsh.toml
+  let cfg = config.load()
+
+  let cli_args = runtime.get_args()
+  let apps_to_boot =
+    list.append(cfg.auto_boot_apps, cli_args)
+    |> list.unique()
+
+  case list.is_empty(apps_to_boot) {
     True -> Nil
     False -> {
       terminal.println("Booting background applications...")
 
-      list.each(args, fn(app_module) {
+      list.each(apps_to_boot, fn(app_module) {
         case runtime.boot_app(app_module) {
           Ok(pid) -> {
-            // Strip out the ugly //erl() syntax wrapper!
             let pid_str =
               string.inspect(pid)
               |> string.replace("//erl(", "")
@@ -118,22 +126,25 @@ pub fn main() -> Nil {
       })
 
       terminal.println("")
-      // Empty line for spacing
       process.sleep(50)
-      // Give them time to print startup logs before raw mode
     }
   }
 
-  // 3. Wrap the logger to prevent staircasing in background jobs
-  runtime.setup_logger()
-
-  // 4. Start the shell as usual
+  // 5. Start the shell as usual
   let assert Ok(_) = tty.enter_raw()
 
   banner()
 
-  // Initialized with empty lists
-  shell_loop(ShellState(1, [], [], [], [], [], False))
+  // Shell state seeded with necessary stuff
+  shell_loop(ShellState(
+    prompt_count: 1,
+    bindings: [],
+    imports: cfg.default_imports,
+    types: [],
+    history: [],
+    functions: [],
+    debug: False,
+  ))
 
   let assert Ok(_) = tty.exit_raw()
 
