@@ -21,15 +21,73 @@ import gsh/internal/input/terminal
 ///   temporarily bypassed to prevent broken ANSI color code rendering.
 /// * **ANSI Highlighting:** When quote counts are balanced, passes the buffer string 
 ///   to `contour.to_ansi()` for real-time Gleam syntax coloring before output.
-pub fn render(prompt: String, buffer: String) -> Nil {
+/// Clears the current line buffer and redraws the prompt along with the user's input.
+/// Safely handles syntax highlighting across multiline pastes and escaped string quotes.
+pub fn render(prompt: String, buffer: String, previous_text: String) -> Nil {
   terminal.clear_line()
 
-  let quote_count = list.count(string.to_graphemes(buffer), fn(c) { c == "\"" })
+  // 1. Calculate if previous lines left a string open (for `...>` prompts)
+  let clean_prev = string.replace(previous_text, "\\\"", "")
+  let prev_quotes =
+    list.count(string.to_graphemes(clean_prev), fn(c) { c == "\"" })
+  let start_in_string = prev_quotes % 2 != 0
 
-  let display_buffer = case quote_count % 2 == 0 {
-    True -> contour.to_ansi(buffer)
-    False -> buffer
-  }
+  // 2. Split the active buffer into individual lines (crucial for Bracketed Pastes!)
+  let lines = string.split(buffer, "\n")
 
+  // 3. Process line-by-line, tracking string state to override the syntax highlighter
+  let #(_, formatted_lines) =
+    list.fold(lines, #(start_in_string, []), fn(acc, line) {
+      let #(in_string, colored_lines) = acc
+
+      // Strip escaped quotes so they don't break our parity math
+      let clean_line = string.replace(line, "\\\"", "")
+      let line_quotes =
+        list.count(string.to_graphemes(clean_line), fn(c) { c == "\"" })
+
+      let ends_in_string = case line_quotes % 2 == 0 {
+        True -> in_string
+        False -> !in_string
+      }
+
+      let colored_line = case in_string, ends_in_string {
+        // 1. Fully enclosed in a multiline string
+        True, True -> "\u{001b}[32m" <> line <> "\u{001b}[0m"
+
+        // 2. Opening a string (e.g., `let x = "`)
+        False, True -> {
+          // Split at the first quote. Highlight the code, color the rest green!
+          case string.split_once(line, "\"") {
+            Ok(#(code, string_part)) ->
+              contour.to_ansi(code)
+              <> "\u{001b}[32m\""
+              <> string_part
+              <> "\u{001b}[0m"
+            Error(_) -> line
+          }
+        }
+
+        // 3. Closing a string (e.g., `  }" }`)
+        True, False -> {
+          // Split at the closing quote. Color the string green, highlight the trailing code!
+          case string.split_once(line, "\"") {
+            Ok(#(string_part, code)) ->
+              "\u{001b}[32m"
+              <> string_part
+              <> "\"\u{001b}[0m"
+              <> contour.to_ansi(code)
+            Error(_) -> line
+          }
+        }
+
+        // 4. Normal code
+        False, False -> contour.to_ansi(line)
+      }
+
+      #(ends_in_string, list.append(colored_lines, [colored_line]))
+    })
+
+  // 4. Reassemble and print
+  let display_buffer = string.join(formatted_lines, "\n")
   terminal.print(prompt <> display_buffer)
 }

@@ -132,6 +132,7 @@ pub fn main() -> Nil {
 
   // 5. Start the shell as usual
   let assert Ok(_) = tty.enter_raw()
+  terminal.enable_bracketed_paste()
 
   banner()
 
@@ -146,6 +147,7 @@ pub fn main() -> Nil {
     debug: False,
   ))
 
+  terminal.disable_bracketed_paste()
   let assert Ok(_) = tty.exit_raw()
 
   Nil
@@ -567,17 +569,22 @@ fn read_lines(
 
   io.print(current_prompt)
 
-  let line = editor.read_line(current_prompt, history, completions)
+  let line = editor.read_line(current_prompt, history, completions, current)
 
-  let combined = case current {
-    "" -> line
-    _ -> current <> "\n" <> line
-  }
+  case line == "\u{0018}" {
+    True -> ""
+    // Cancel evaluation and reset the prompt
+    False -> {
+      let combined = case current {
+        "" -> line
+        _ -> current <> "\n" <> line
+      }
 
-  case buffer.is_complete(combined) {
-    True -> combined
-
-    False -> read_lines(prompt, history, combined, False, completions)
+      case buffer.is_complete(combined) {
+        True -> combined
+        False -> read_lines(prompt, history, combined, False, completions)
+      }
+    }
   }
 }
 

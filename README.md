@@ -24,7 +24,7 @@ gleam run -m gsh
 ```gleam
 Erlang/OTP 28 [erts-16.1.2] [source] [64-bit] [smp:16:16] [ds:16:16:10] [async-threads:1] [jit:ns]
 
-Interactive Gleam (GSH 1.1.6) - press Ctrl+C to exit (type :h ENTER for help)
+Interactive Gleam (GSH 1.1.9) - press Ctrl+C to exit (type :h ENTER for help)
 gsh(1)> import your_app/config
 ok
 gsh(2)> config.load()
@@ -84,28 +84,56 @@ After using Elixir's `iex`, OCaml's `utop` or even Rust's `evcxr`. I really want
 ## Feature highlights
 
 1. **Tab-autocompletion & suggestions:**
-
-Press \<TAB> during imports or function calls to get completion & suggestions.
+    Press \<TAB> during imports or function calls to get completion & suggestions.
 
 2. **Stateless session history:**
 
-Use the \<up and down arrows> to navigate through previously entered commands. History isn't saved after the session ends.
+    Use the \<up and down arrows> to navigate through previously entered commands. History isn't saved after the session ends.
 
 3. **Word-wise navigation:**
-
-Ctrl+\<left or right arrows> allow word-wise navigation.
+    
+    Ctrl+\<left or right arrows> allow word-wise navigation.
 
 4. **Dynamic function redefinition:**
 
-Swap out function logic on the fly without restarting the shell. While the Gleam compiler strictly forbids duplicate function names within a module, GSH acts as a dynamic REPL layer—automatically pruning your historical state to allow Elixir-style rapid prototyping.
+    Swap out function logic on the fly without restarting the shell. While the Gleam compiler strictly forbids duplicate function names within a module, GSH acts as a dynamic REPL layer—automatically pruning your historical state to allow Elixir-style rapid prototyping.
 
 5. **Observer GUI support:**
-
-Provided you have Erlang with wxwidgets support, `:obs` will open the Observer GUI.
+    
+    Provided you have Erlang with wxwidgets support, `:obs` will open the Observer GUI.
 
 6. **Automated configuration (`.gsh.toml`):**
+    
+    Pre-load your favorite stdlib or project modules and declare background applications to launch automatically on startup. Eliminate repetitive CLI flags and setup typing—modules like gleam/string or gleam/list are ready on line 1, and your OTP services boot instantly in the background.
 
-Pre-load your favorite stdlib or project modules and declare background applications to launch automatically on startup. Eliminate repetitive CLI flags and setup typing—modules like gleam/string or gleam/list are ready on line 1, and your OTP services boot instantly in the background.
+    ```
+    # .gsh.toml
+    imports = [
+      "gleam/string",
+      "gleam/int",
+      "gleam/bool",
+      "gleam/set",
+      "gleam/list",
+      "gleam/result",
+      "gleam/option",
+      "gleam/erlang/process"
+    ]
+
+    apps = [
+      "your_app"
+    ]
+    ```
+7. **Multi-line pasting:**
+
+    Paste massive blocks of code, complex types, or deeply nested functions without breaking a sweat. Under the hood, GSH leverages Bracketed Paste Mode and dynamic chunk reassembly to safely swallow huge clipboard dumps without triggering premature evaluation, character truncation, or terminal flooding.
+
+8. **Safe abort escape hatch (Ctrl+X):**
+
+    Made a typo or got stuck inside a multi-line continuation prompt (`...>`) missing a closing brace? Press `Ctrl+X` to instantly abort the current input buffer and drop back to a fresh, clean prompt — without crashing the REPL or waking up the Erlang VM's low-level break menu.
+
+9. **Context-aware multiline syntax highlighting:**
+
+    GSH doesn't just colorize single lines; it tracks your AST state across continuations. Multiline strings, escaped quotes (\"), and deeply nested closures are intelligently parsed and highlighted on the fly, ensuring your code remains beautiful and readable even during massive clipboard dumps.
 
 ## How it works
 ### In-RAM Fast Compilation Pipeline (Sub-50ms Latency)

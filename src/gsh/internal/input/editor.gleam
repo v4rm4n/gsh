@@ -16,7 +16,7 @@ import gleam/string
 import gsh/internal/input/display
 import gsh/internal/input/key.{
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace, Character, CtrlL,
-  CtrlLeft, CtrlRight, End, Enter, Home, Tab,
+  CtrlLeft, CtrlRight, CtrlX, End, Enter, Home, PasteEnd, PasteStart, Tab,
 }
 import gsh/internal/input/reader
 import gsh/internal/input/terminal
@@ -36,6 +36,7 @@ pub type Editor {
     saved_buffer: Option(String),
     /// Pre-rendered multi-column string grid containing active autocompletion suggestions.
     menu: Option(String),
+    previous_text: String,
   )
 }
 
@@ -46,6 +47,7 @@ pub fn read_line(
   prompt: String,
   history: List(String),
   completions: List(String),
+  previous_text: String,
 ) -> String {
   loop(
     prompt,
@@ -56,6 +58,7 @@ pub fn read_line(
       history_index: -1,
       saved_buffer: None,
       menu: None,
+      previous_text: previous_text,
     ),
     completions,
   )
@@ -90,7 +93,7 @@ fn render_editor(
   terminal.print("\u{001b}[J")
 
   // 3. Draw the new prompt and buffer
-  display.render(prompt, new_editor.buffer)
+  display.render(prompt, new_editor.buffer, new_editor.previous_text)
 
   // 4. Draw the floating menu if it exists
   case new_editor.menu {
@@ -99,7 +102,7 @@ fn render_editor(
       terminal.print("\n" <> grid)
       terminal.cursor_up(lines_to_go_up)
       terminal.move_start()
-      display.render(prompt, new_editor.buffer)
+      display.render(prompt, new_editor.buffer, new_editor.previous_text)
     }
     None -> Nil
   }
@@ -185,6 +188,11 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
   let key = reader.read_key()
 
   case key {
+    CtrlX -> {
+      terminal.println("^X")
+      "\u{0018}"
+    }
+
     Enter -> {
       // 1. Create a final state with the cursor pushed to the very end of the text
       // and the autocomplete menu explicitly closed.
@@ -406,6 +414,36 @@ fn loop(prompt: String, editor: Editor, completions: List(String)) -> String {
       }
     }
 
+    PasteStart -> {
+      // 1. Drain stdin synchronously until PasteEnd is received
+      let raw_pasted_text = drain_paste_buffer("")
+
+      // 2. Normalize carriage returns into clean line breaks
+      let clean_paste =
+        raw_pasted_text
+        |> string.replace("\r\n", "\n")
+        |> string.replace("\r", "\n")
+
+      // 3. Insert the entire multi-line paste into the buffer at current cursor
+      let left = string.slice(editor.buffer, 0, editor.cursor)
+      let right =
+        string.slice(
+          editor.buffer,
+          editor.cursor,
+          string.length(editor.buffer) - editor.cursor,
+        )
+
+      let new_buffer = left <> clean_paste <> right
+      let new_cursor = editor.cursor + string.length(clean_paste)
+
+      let updated =
+        Editor(..editor, buffer: new_buffer, cursor: new_cursor, menu: None)
+
+      // 4. Render the editor frame ONCE for the entire pasted block
+      render_editor(prompt, editor, updated)
+      loop(prompt, updated, completions)
+    }
+
     _ -> loop(prompt, editor, completions)
   }
 }
@@ -467,6 +505,7 @@ fn history_up(editor: Editor) -> Editor {
         history_index: new_index,
         saved_buffer: saved_buffer,
         menu: None,
+        previous_text: editor.previous_text,
       )
     }
   }
@@ -490,6 +529,7 @@ fn history_down(editor: Editor) -> Editor {
             history_index: -1,
             saved_buffer: None,
             menu: None,
+            previous_text: editor.previous_text,
           )
         }
         False -> {
@@ -507,6 +547,7 @@ fn history_down(editor: Editor) -> Editor {
             history_index: new_index,
             saved_buffer: editor.saved_buffer,
             menu: None,
+            previous_text: editor.previous_text,
           )
         }
       }
@@ -643,6 +684,36 @@ fn scan_word_right(buffer: String, cursor: Int) -> Int {
       }
 
       int.min(max_len, cursor + jump)
+    }
+  }
+}
+
+/// Recursively drains input keystrokes, reassembling fragmented chunks to ensure 
+/// the PasteEnd sequence is always caught, even if split across terminal frames.
+fn drain_paste_buffer(acc: String) -> String {
+  // 1. Check if the assembled string contains the end marker (catches fragmented pieces!)
+  case string.contains(acc, "\u{001b}[201~") {
+    True -> {
+      // Clean the marker out and return the final payload
+      string.replace(acc, "\u{001b}[201~", "")
+    }
+    False -> {
+      case reader.read_key() {
+        PasteEnd(Some(trailing)) ->
+          drain_paste_buffer(acc <> trailing <> "\u{001b}[201~")
+        PasteEnd(None) -> string.replace(acc, "\u{001b}[201~", "")
+        Character(c) -> {
+          // Normalize embedded newlines
+          let clean_chunk =
+            c
+            |> string.replace("\r\n", "\n")
+            |> string.replace("\r", "\n")
+          drain_paste_buffer(acc <> clean_chunk)
+        }
+        Enter -> drain_paste_buffer(acc <> "\n")
+        Tab -> drain_paste_buffer(acc <> "  ")
+        _ -> drain_paste_buffer(acc)
+      }
     }
   }
 }

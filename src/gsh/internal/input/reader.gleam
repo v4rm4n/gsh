@@ -11,9 +11,11 @@ import etch/erlang/input
 import etch/event
 import gleam/erlang/process
 import gleam/option.{None, Some}
+import gleam/string
 import gsh/internal/input/key.{
   type Key as GshKey, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Backspace,
-  Character, CtrlL, CtrlLeft, CtrlRight, End, Enter, Home, Tab, Unknown,
+  Character, CtrlL, CtrlLeft, CtrlRight, CtrlX, End, Enter, Home, PasteEnd,
+  PasteStart, Tab, Unknown,
 }
 
 /// Polls the raw TTY stream for the next valid keyboard event.
@@ -52,30 +54,56 @@ pub fn read_key() -> GshKey {
 fn map_etch_key(key_event: event.KeyEvent) -> GshKey {
   let is_ctrl = key_event.modifiers.control
 
-  case key_event.code, is_ctrl {
-    event.Char("\f"), _ -> CtrlL
-    event.Char("l"), True -> CtrlL
-    event.Char("L"), True -> CtrlL
+  case key_event.code {
+    event.Char(c) -> {
+      case string.contains(c, "\u{001b}[200~") {
+        True -> {
+          let rest = string.replace(c, "\u{001b}[200~", "")
+          case rest {
+            "" -> PasteStart
+            _ -> Character(rest)
+          }
+        }
+        False ->
+          case string.contains(c, "\u{001b}[201~") {
+            True -> {
+              let prefix = string.replace(c, "\u{001b}[201~", "")
+              case prefix {
+                "" -> PasteEnd(None)
+                _ -> PasteEnd(Some(prefix))
+              }
+            }
+            False ->
+              case c, is_ctrl {
+                // Catch raw Ctrl+X byte or explicit chord
+                "\u{0018}", _ | "x", True | "X", True -> CtrlX
+                "\f", _ | "l", True | "L", True -> CtrlL
+                _, _ -> Character(c)
+              }
+          }
+      }
+    }
 
-    event.Enter, _ -> Enter
-    event.Backspace, _ -> Backspace
-    event.Tab, _ -> Tab
-    event.UpArrow, _ -> ArrowUp
-    event.DownArrow, _ -> ArrowDown
+    event.Enter -> Enter
+    event.Backspace -> Backspace
+    event.Tab -> Tab
+    event.UpArrow -> ArrowUp
+    event.DownArrow -> ArrowDown
 
-    // 1. Check for Ctrl modifiers BEFORE falling back to standard arrows
-    event.LeftArrow, True -> CtrlLeft
-    event.RightArrow, True -> CtrlRight
+    event.LeftArrow ->
+      case is_ctrl {
+        True -> CtrlLeft
+        False -> ArrowLeft
+      }
 
-    // 2. Standard arrows
-    event.LeftArrow, False -> ArrowLeft
-    event.RightArrow, False -> ArrowRight
+    event.RightArrow ->
+      case is_ctrl {
+        True -> CtrlRight
+        False -> ArrowRight
+      }
 
-    // 3. Home and End keys
-    event.Home, _ -> Home
-    event.End, _ -> End
-
-    event.Char(c), False -> Character(c)
-    _, _ -> Unknown
+    event.Home -> Home
+    event.End -> End
+    _ -> Unknown
   }
 }

@@ -83,3 +83,16 @@ pub fn cursor_down(count: Int) -> Nil {
 pub fn clear_screen() -> Nil {
   io.print("\u{001b}[2J\u{001b}[H")
 }
+
+/// Enables Bracketed Paste Mode (`\u{001b}[?2004h`).
+/// 
+/// Instructs the terminal emulator to wrap pasted text blocks in 
+/// `\u{001b}[200~` (start) and `\u{001b}[201~` (end) control codes.
+pub fn enable_bracketed_paste() -> Nil {
+  io.print("\u{001b}[?2004h")
+}
+
+/// Disables Bracketed Paste Mode (`\u{001b}[?2004l`).
+pub fn disable_bracketed_paste() -> Nil {
+  io.print("\u{001b}[?2004l")
+}

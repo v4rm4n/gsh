@@ -7,6 +7,8 @@
 
 // src/gsh/internal/input/key.gleam
 
+import gleam/option.{type Option}
+
 /// Represents a parsed keystroke or control sequence captured from raw terminal input.
 pub type Key {
   /// A printable UTF-8 character grapheme (e.g., `"a"`, `"Z"`, `"5"`, `" "`).
@@ -17,6 +19,8 @@ pub type Key {
 
   /// The Backspace key, used to remove the character grapheme preceding the cursor.
   Backspace
+
+  CtrlX
 
   /// The Tab key, used to trigger predictive autocompletion and candidate grid menus.
   Tab
@@ -50,4 +54,7 @@ pub type Key {
 
   /// Unrecognized or unhandled ANSI escape sequences (e.g., function keys, scroll lock).
   Unknown
+
+  PasteStart
+  PasteEnd(Option(String))
 }
