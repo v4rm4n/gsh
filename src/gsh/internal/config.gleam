@@ -1,5 +1,4 @@
 // src/gsh/internal/config.gleam
-
 import gleam/list
 import gleam/result
 import simplifile
@@ -12,15 +11,15 @@ pub type Config {
 pub fn load() -> Config {
   let default_config = Config(default_imports: [], auto_boot_apps: [])
 
-  case simplifile.read(".gsh.toml") {
+  case simplifile.read("gleam.toml") {
     Error(_) -> default_config
     Ok(content) -> {
       case tom.parse(content) {
         Error(_) -> default_config
         Ok(toml) -> {
-          // Extract the [imports] array
+          // Extract the array from [tools.gsh] -> imports
           let imports =
-            tom.get_array(toml, ["imports"])
+            tom.get_array(toml, ["tools", "gsh", "imports"])
             |> result.unwrap([])
             |> list.filter_map(fn(val) {
               case val {
@@ -29,8 +28,9 @@ pub fn load() -> Config {
               }
             })
 
+          // Extract the array from [tools.gsh] -> apps
           let apps =
-            tom.get_array(toml, ["apps"])
+            tom.get_array(toml, ["tools", "gsh", "apps"])
             |> result.unwrap([])
             |> list.filter_map(fn(val) {
               case val {

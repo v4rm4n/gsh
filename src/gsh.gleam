@@ -18,7 +18,6 @@
 import etch/erlang/tty
 import gleam/erlang/atom
 import gleam/erlang/process
-import gleam/format
 import gleam/int
 import gleam/io
 import gleam/list
@@ -99,6 +98,30 @@ pub fn main() -> Nil {
   // 3. Load configuration from .gsh.toml
   let cfg = config.load()
 
+  // Validate configured imports against available project modules
+  let available_modules = get_import_completions()
+  let valid_imports =
+    list.filter(cfg.default_imports, fn(imp) {
+      let path = string.replace(imp, "import ", "") |> string.trim()
+      let real_path = case string.split_once(path, on: " as ") {
+        Ok(#(p, _)) -> string.trim(p)
+        Error(_) -> path
+      }
+
+      case list.contains(available_modules, real_path) {
+        True -> True
+        False -> {
+          // Print a yellow warning to the terminal and drop the invalid import
+          terminal.println(
+            "\u{001b}[33mwarning:\u{001b}[0m Module '"
+            <> real_path
+            <> "' specified in [tools.gsh] imports not found. Ignoring.",
+          )
+          False
+        }
+      }
+    })
+
   let cli_args = runtime.get_args()
   let apps_to_boot =
     list.append(cfg.auto_boot_apps, cli_args)
@@ -140,7 +163,7 @@ pub fn main() -> Nil {
   shell_loop(ShellState(
     prompt_count: 1,
     bindings: [],
-    imports: cfg.default_imports,
+    imports: valid_imports,
     types: [],
     history: [],
     functions: [],
@@ -156,11 +179,12 @@ pub fn main() -> Nil {
 /// Prints the OTP/ERTS version and the GSH startup banner.
 fn banner() -> Nil {
   terminal.println(system_version())
-  format.printf(
-    "Interactive Gleam (GSH ~s) - press Ctrl+C to exit (type :h ENTER for help)",
-    app_version(atom.create("gsh")),
-  )
-  terminal.println("")
+  {
+    "Interactive Gleam (GSH "
+    <> app_version(atom.create("gsh"))
+    <> ") - press Ctrl+C to exit (type :h ENTER for help)"
+  }
+  |> terminal.println()
 }
 
 /// The recursive heartbeat of the REPL. 

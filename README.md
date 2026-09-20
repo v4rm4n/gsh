@@ -102,12 +102,19 @@ After using Elixir's `iex`, OCaml's `utop` or even Rust's `evcxr`. I really want
     
     Provided you have Erlang with wxwidgets support, `:obs` will open the Observer GUI.
 
-6. **Automated configuration (`.gsh.toml`):**
+6. **Automated configuration (`gleam.toml`):**
     
-    Pre-load your favorite stdlib or project modules and declare background applications to launch automatically on startup. Eliminate repetitive CLI flags and setup typing—modules like gleam/string or gleam/list are ready on line 1, and your OTP services boot instantly in the background.
+    Pre-load your favorite stdlib or project modules and declare background applications to launch automatically on startup. Eliminate repetitive CLI flags and setup typing by adding a [tools.gsh] table directly to your project's gleam.toml. Modules like gleam/string or gleam/list will be ready on line 1, and your OTP services will boot instantly in the background.
 
     ```
-    # .gsh.toml
+    # gleam.toml
+    name = "your_app"
+    version = "1.0.0"
+
+    [dependencies]
+    gleam_stdlib = "~> 0.34"
+
+    [tools.gsh]
     imports = [
       "gleam/string",
       "gleam/int",
@@ -118,11 +125,11 @@ After using Elixir's `iex`, OCaml's `utop` or even Rust's `evcxr`. I really want
       "gleam/option",
       "gleam/erlang/process"
     ]
-
     apps = [
       "your_app"
     ]
     ```
+    
 7. **Multi-line pasting:**
 
     Paste massive blocks of code, complex types, or deeply nested functions without breaking a sweat. Under the hood, GSH leverages Bracketed Paste Mode and dynamic chunk reassembly to safely swallow huge clipboard dumps without triggering premature evaluation, character truncation, or terminal flooding.

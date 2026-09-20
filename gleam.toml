@@ -1,5 +1,5 @@
 name = "gsh"
-version = "1.1.9"
+version = "1.2.0"
 
 description = "GSH is an interactive REPL for the Gleam Programming Language written in Gleam and Erlang."
 licences = ["Apache-2.0"]
@@ -23,3 +23,6 @@ tom = ">= 2.1.0 and < 3.0.0"
 
 [dev_dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
+
+[erlang]
+extra_applications = ["compiler"]
