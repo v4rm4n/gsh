@@ -40,6 +40,7 @@ pub fn evaluate(
   functions: List(#(String, String)),
   debug: Bool,
   prompt_count: Int,
+  remote_node: option.Option(String),
 ) -> Evaluation {
   let module_name = "gsh_eval_" <> int.to_string(prompt_count)
   let evaluator_path = "src/" <> module_name <> ".gleam"
@@ -146,6 +147,7 @@ pub fn evaluate(
         is_type,
         is_function,
         False,
+        remote_node,
       )
     }
   }
@@ -166,6 +168,7 @@ fn evaluate_loop(
   is_type: Bool,
   is_function: Bool,
   bindings_pruned: Bool,
+  remote_node: option.Option(String),
 ) -> Evaluation {
   // 1. Drop the historical version if we are redefining it right now!
   let clean_functions = case is_function, parsed_def_name {
@@ -200,7 +203,14 @@ fn evaluate_loop(
     Ok(_) -> {
       let start_time = runtime.system_time()
       let needs_export = is_import || is_type || is_function
-      let result = runner.run(parsed_binding, module_name, input, needs_export)
+      let result =
+        runner.run(
+          parsed_binding,
+          module_name,
+          input,
+          needs_export,
+          remote_node,
+        )
       let elapsed_us = runtime.system_time() - start_time
       let _ = simplifile.delete(evaluator_path)
 
@@ -277,6 +287,7 @@ fn evaluate_loop(
                     is_type,
                     is_function,
                     True,
+                    remote_node,
                   )
                 }
                 None -> result
@@ -374,7 +385,7 @@ fn make_function_source(
   <> "\n\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"// Function defined\")\n"
+  <> "  \"// Function defined\"\n"
   <> "}\n"
 }
 
@@ -439,7 +450,7 @@ fn make_type_source(
   <> "\n\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
+  <> "  \"ok\"\n"
   <> "}\n"
 }
 
@@ -459,7 +470,7 @@ fn make_import_source(
   <> "\n"
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
-  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
+  <> "  \"ok\"\n"
   <> "}\n"
 }
 
@@ -481,8 +492,7 @@ fn make_expression_source(
   <> expression
   <> "\n"
   <> "  }\n"
-  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect(gsh_internal_expr))\n"
-  <> "  gsh_internal_expr\n"
+  <> "  gsh_internal_string.inspect(gsh_internal_expr)\n"
   <> "}\n"
 }
 
@@ -517,12 +527,9 @@ fn make_normal_binding_source(
       <> "pub fn gsh_entry() {\n"
       <> bindings_source(bindings)
       <> generate_current_binding(binding)
-      <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: gsh_internal_string.inspect("
+      <> "  gsh_internal_string.inspect("
       <> name
-      <> "))\n"
-      <> "  "
-      <> name
-      <> "\n"
+      <> ")\n"
       <> "}\n"
 
     _ ->
@@ -544,7 +551,7 @@ fn make_complex_binding_source(
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> generate_current_binding(binding)
-  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
+  <> "  \"ok\"\n"
   <> "}\n"
 }
 
@@ -562,7 +569,7 @@ fn make_assert_source(
   <> "pub fn gsh_entry() {\n"
   <> bindings_source(bindings)
   <> generate_current_binding(binding)
-  <> "  let _ = simplifile.write(to: \"gsh_out.txt\", contents: \"ok\")\n"
+  <> "  \"ok\"\n"
   <> "}\n"
 }
 

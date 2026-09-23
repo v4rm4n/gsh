@@ -64,6 +64,8 @@ pub type ShellState {
     /// Toggles verbose output for debugging the internal AST parsing and 
     /// evaluation pipeline.
     debug: Bool,
+    /// Tracks the target node for remote evaluations
+    remote_node: option.Option(String),
   )
 }
 
@@ -122,32 +124,57 @@ pub fn main() -> Nil {
       }
     })
 
-  let cli_args = runtime.get_args()
+  // Parse Networking Flags
+  let raw_args = runtime.get_args()
+  let #(sname, name, cookie, remsh, app_args) =
+    parse_network_args(
+      raw_args,
+      option.None,
+      option.None,
+      option.None,
+      option.None,
+      [],
+    )
+
+  // Initialize the distributed node BEFORE setting the cookie
+  let _ = case sname, name {
+    option.Some(n), _ -> runtime.start_network(n, "shortnames")
+    _, option.Some(n) -> runtime.start_network(n, "longnames")
+    option.None, option.None -> {
+      // Auto-start a hidden node if they provided a remsh target but no local name
+      case remsh {
+        option.Some(_) ->
+          runtime.start_network(
+            "gsh_" <> int.to_string(runtime.system_time()),
+            "shortnames",
+          )
+        option.None -> Ok(Nil)
+      }
+    }
+  }
+
+  // Set the authentication cookie if provided
+  case cookie {
+    option.Some(c) -> runtime.set_cookie(c)
+    option.None -> Nil
+  }
+
+  // Use the filtered `app_args` instead of `cli_args` for booting background apps
   let apps_to_boot =
-    list.append(cfg.auto_boot_apps, cli_args)
+    list.append(cfg.auto_boot_apps, app_args)
     |> list.unique()
 
   case list.is_empty(apps_to_boot) {
     True -> Nil
     False -> {
       terminal.println("Booting background applications...")
-
       list.each(apps_to_boot, fn(app_module) {
         case runtime.boot_app(app_module) {
-          Ok(pid) -> {
-            let pid_str =
-              string.inspect(pid)
-              |> string.replace("//erl(", "")
-              |> string.replace(")", "")
-
-            terminal.println(app_module <> " -> " <> pid_str)
-          }
-          Error(err) -> {
-            terminal.println(app_module <> " -> Failed: " <> err)
-          }
+          Ok(pid) ->
+            terminal.println(app_module <> " -> " <> string.inspect(pid))
+          Error(err) -> terminal.println(app_module <> " -> Failed: " <> err)
         }
       })
-
       terminal.println("")
       process.sleep(50)
     }
@@ -159,6 +186,32 @@ pub fn main() -> Nil {
 
   banner()
 
+  let valid_remsh = case remsh {
+    option.Some(target) -> {
+      case runtime.ping_node(target) {
+        True -> {
+          terminal.println(
+            "\u{001b}[36mConnected to remote node: " <> target <> "\u{001b}[0m",
+          )
+          option.Some(target)
+        }
+        False -> {
+          terminal.println(
+            "\u{001b}[31merror:\u{001b}[0m Could not reach remote node '"
+            <> target
+            <> "'. (Wrong cookie or name?)",
+          )
+          // Revert to local execution so they don't accidentally wipe their local database thinking they are on prod!
+          terminal.println(
+            "\u{001b}[33mwarning:\u{001b}[0m Falling back to local REPL.",
+          )
+          option.None
+        }
+      }
+    }
+    option.None -> option.None
+  }
+
   // Shell state seeded with necessary stuff
   shell_loop(ShellState(
     prompt_count: 1,
@@ -168,12 +221,50 @@ pub fn main() -> Nil {
     history: [],
     functions: [],
     debug: False,
+    remote_node: valid_remsh,
   ))
 
   terminal.disable_bracketed_paste()
   let assert Ok(_) = tty.exit_raw()
 
   Nil
+}
+
+/// Recursively strips network flags from standard CLI arguments
+fn parse_network_args(
+  args: List(String),
+  sname: option.Option(String),
+  name: option.Option(String),
+  cookie: option.Option(String),
+  remsh: option.Option(String),
+  others: List(String),
+) -> #(
+  option.Option(String),
+  option.Option(String),
+  option.Option(String),
+  option.Option(String),
+  List(String),
+) {
+  case args {
+    ["--sname", val, ..rest] ->
+      parse_network_args(rest, option.Some(val), name, cookie, remsh, others)
+    ["--name", val, ..rest] ->
+      parse_network_args(rest, sname, option.Some(val), cookie, remsh, others)
+    ["--cookie", val, ..rest] ->
+      parse_network_args(rest, sname, name, option.Some(val), remsh, others)
+    ["--remsh", val, ..rest] ->
+      parse_network_args(rest, sname, name, cookie, option.Some(val), others)
+    [other, ..rest] ->
+      parse_network_args(
+        rest,
+        sname,
+        name,
+        cookie,
+        remsh,
+        list.append(others, [other]),
+      )
+    [] -> #(sname, name, cookie, remsh, others)
+  }
 }
 
 /// Prints the OTP/ERTS version and the GSH startup banner.
@@ -195,16 +286,7 @@ fn shell_loop(state: ShellState) -> Nil {
   let input = read_command(prompt, state)
 
   case input {
-    "" ->
-      shell_loop(ShellState(
-        state.prompt_count,
-        state.bindings,
-        state.imports,
-        state.types,
-        state.history,
-        state.functions,
-        state.debug,
-      ))
+    "" -> shell_loop(state)
 
     _ -> handle_input(input, state)
   }
@@ -226,15 +308,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
 
   case command.handle(input, state.bindings, state.history) {
     command.Handled ->
-      shell_loop(ShellState(
-        state.prompt_count + 1,
-        state.bindings,
-        state.imports,
-        state.types,
-        history,
-        state.functions,
-        state.debug,
-      ))
+      shell_loop(
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+      )
 
     command.Exit -> {
       let _ = tty.exit_raw()
@@ -244,15 +320,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
 
     command.Clear -> {
       terminal.clear_screen()
-      shell_loop(ShellState(
-        state.prompt_count + 1,
-        state.bindings,
-        state.imports,
-        state.types,
-        history,
-        state.functions,
-        state.debug,
-      ))
+      shell_loop(
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+      )
     }
 
     command.Compile -> {
@@ -281,15 +351,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         }
       }
 
-      shell_loop(ShellState(
-        state.prompt_count + 1,
-        state.bindings,
-        state.imports,
-        state.types,
-        history,
-        state.functions,
-        state.debug,
-      ))
+      shell_loop(
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+      )
     }
 
     command.Help(target) -> {
@@ -322,15 +386,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       // 4. Re-enter raw mode and restart the shell loop
       let assert Ok(_) = tty.enter_raw()
 
-      shell_loop(ShellState(
-        state.prompt_count + 1,
-        state.bindings,
-        state.imports,
-        state.types,
-        history,
-        state.functions,
-        state.debug,
-      ))
+      shell_loop(
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+      )
     }
 
     command.ToggleDebug -> {
@@ -341,15 +399,14 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       }
       terminal.println("Debug mode " <> status)
 
-      shell_loop(ShellState(
-        state.prompt_count + 1,
-        state.bindings,
-        state.imports,
-        state.types,
-        history,
-        state.functions,
-        new_debug,
-      ))
+      shell_loop(
+        ShellState(
+          ..state,
+          prompt_count: state.prompt_count + 1,
+          history:,
+          debug: new_debug,
+        ),
+      )
     }
 
     command.Logs -> {
@@ -368,16 +425,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       // 5. Clear the screen again and return to the normal REPL state
       terminal.clear_screen()
 
-      shell_loop(ShellState(
-        state.prompt_count,
-        // Don't increment prompt count since it wasn't an evaluation
-        state.bindings,
-        state.imports,
-        state.types,
-        history,
-        state.functions,
-        state.debug,
-      ))
+      shell_loop(ShellState(..state, history:))
     }
 
     command.Obs -> {
@@ -386,15 +434,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         Error(err) -> terminal.println("\u{001b}[31merror:\u{001b}[0m " <> err)
       }
 
-      shell_loop(ShellState(
-        state.prompt_count,
-        state.bindings,
-        state.imports,
-        state.types,
-        history,
-        state.functions,
-        state.debug,
-      ))
+      shell_loop(ShellState(..state, history:))
     }
 
     command.NotCommand -> {
@@ -406,15 +446,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
         True -> {
           terminal.println("Discarded duplicate import")
 
-          shell_loop(ShellState(
-            state.prompt_count + 1,
-            state.bindings,
-            state.imports,
-            state.types,
-            history,
-            state.functions,
-            state.debug,
-          ))
+          shell_loop(
+            ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+          )
         }
 
         False -> {
@@ -430,6 +464,7 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               state.functions,
               state.debug,
               state.prompt_count,
+              state.remote_node,
             )
 
           // Print evaluator output while still in normal mode
@@ -507,15 +542,17 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             option.None -> state.imports
           }
 
-          shell_loop(ShellState(
-            state.prompt_count + 1,
-            bindings,
-            imports,
-            types,
-            history,
-            functions,
-            state.debug,
-          ))
+          shell_loop(
+            ShellState(
+              ..state,
+              prompt_count: state.prompt_count + 1,
+              bindings:,
+              imports:,
+              types:,
+              history:,
+              functions:,
+            ),
+          )
         }
       }
     }

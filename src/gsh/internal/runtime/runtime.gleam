@@ -106,3 +106,23 @@ pub fn hot_reload(module_path: String) -> Nil {
 
 @external(erlang, "ffi", "ensure_code_paths")
 pub fn ensure_code_paths() -> Nil
+
+@external(erlang, "ffi", "start_network")
+pub fn start_network(name: String, name_type: String) -> Result(Nil, String)
+
+@external(erlang, "ffi", "set_cookie")
+pub fn set_cookie(cookie: String) -> Nil
+
+/// Compiles a local Erlang file to bytecode, pushes the binary across the network 
+/// to a remote node, and executes it securely.
+@external(erlang, "ffi", "rpc_compile_and_run")
+pub fn rpc_compile_and_run(
+  node: String,
+  erl_path: String,
+  module: String,
+  function: String,
+) -> Result(Dynamic, Dynamic)
+
+/// Pings a remote node to verify network reachability and cookie authentication.
+@external(erlang, "ffi", "ping_node")
+pub fn ping_node(node: String) -> Bool

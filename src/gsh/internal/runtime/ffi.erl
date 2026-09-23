@@ -18,7 +18,11 @@
     start_observer/0,
     compile_and_load/2,
     run_entry/2,
-    ensure_code_paths/0
+    ensure_code_paths/0,
+    start_network/2,
+    set_cookie/1,
+    rpc_compile_and_run/4,
+    ping_node/1
 ]).
 
 %% Returns the current system time in microseconds to guarantee 
@@ -210,3 +214,52 @@ ensure_code_paths() ->
         Paths -> lists:foreach(fun(P) -> code:add_patha(P) end, Paths)
     end,
     ok.
+
+start_network(Name, NameType) ->
+    NodeName = list_to_atom(binary_to_list(Name)),
+    Type = list_to_atom(binary_to_list(NameType)),
+    % start/1 is deprecated in newer OTPs, using start/1 with map or net_kernel:start/1
+    case net_kernel:start([NodeName, Type]) of
+        {ok, _Pid} -> {ok, nil};
+        {error, Reason} -> {error, list_to_binary(io_lib:format("~p", [Reason]))}
+    end.
+
+set_cookie(Cookie) ->
+    CookieAtom = list_to_atom(binary_to_list(Cookie)),
+    erlang:set_cookie(node(), CookieAtom),
+    nil.
+
+%% Compiles an Erlang file to binary locally, then pushes and executes it on a remote node.
+rpc_compile_and_run(NodeStr, ErlPathStr, ModuleStr, FunctionStr) ->
+    Node = list_to_atom(binary_to_list(NodeStr)),
+    ErlPath = binary_to_list(ErlPathStr),
+    Module = list_to_atom(binary_to_list(ModuleStr)),
+    Function = list_to_atom(binary_to_list(FunctionStr)),
+
+    % 1. Compile the local .erl file directly to a binary payload in memory
+    case compile:file(ErlPath, [binary]) of
+        {ok, Module, Binary} ->
+            % 2. Push the binary across the network to the live server
+            case rpc:call(Node, code, load_binary, [Module, "", Binary]) of
+                {module, Module} ->
+                    % 3. Execute the function inside the production node!
+                    case rpc:call(Node, Module, Function, []) of
+                        {badrpc, Reason} -> {error, {badrpc, Reason}};
+                        Result -> {ok, Result}
+                    end;
+                Error ->
+                    {error, {load_failed, Error}}
+            end;
+        error ->
+            {error, compile_failed};
+        {error, Errors, _Warnings} ->
+            {error, {compile_failed, Errors}}
+    end.
+
+%% Actively attempts to handshake with a remote node
+ping_node(NodeStr) ->
+    Node = list_to_atom(binary_to_list(NodeStr)),
+    case net_adm:ping(Node) of
+        pong -> true;
+        pang -> false
+    end.

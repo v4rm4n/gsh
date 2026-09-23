@@ -8,6 +8,7 @@
 
 // src/gsh/internal/evaluator/runner.gleam
 
+import gleam/dynamic
 import gleam/option.{type Option, None}
 import gleam/string
 import gsh/internal/evaluator/binding.{type Binding}
@@ -21,48 +22,26 @@ import gsh/internal/runtime/runtime
 import shellout
 import simplifile
 
-/// Filters whether a successfully evaluated binding should be persisted into 
-/// the shell's active state.
-/// 
-/// Currently, standard `Let` bindings are saved, but strict `LetAssert` 
-/// pattern matches are intentionally discarded. This prevents complex, 
-/// fallible destructuring from polluting the REPL's persistent variable cache.
+/// Zero-cost cast to force the Erlang RPC payload back into a Gleam String.
+@external(erlang, "gleam_stdlib", "identity")
+fn unsafe_to_string(a: dynamic.Dynamic) -> String
+
 fn persist_binding(binding: Option(Binding)) -> Option(Binding) {
   binding
 }
 
-/// Triggers a full compilation of the host workspace using the Gleam CLI.
-/// 
-/// This is invoked by the `compile` command in the REPL, allowing developers 
-/// to rebuild their background application and trigger Erlang VM hot-reloads 
-/// without dropping their active shell session.
 pub fn build_project() -> Result(String, #(Int, String)) {
-  shellout.command(
-    run: "gleam",
-    with: ["build"],
-    in: ".",
-    // Force Gleam to output ANSI color codes!
-    opt: [
-      shellout.SetEnvironment([#("FORCE_COLOR", "1"), #("CLICOLOR_FORCE", "1")]),
-    ],
-  )
+  shellout.command(run: "gleam", with: ["build"], in: ".", opt: [
+    shellout.SetEnvironment([#("FORCE_COLOR", "1"), #("CLICOLOR_FORCE", "1")]),
+  ])
 }
 
-/// The core execution pipeline for evaluated code.
-/// 
-/// **Execution Lifecycle:**
-/// 1. **Isolated Compilation:** Invokes `gleam compile-package` targeting an 
-///    isolated `build/dev/erlang/gsh_eval` output directory. This ensures the REPL's 
-///    temporary files never corrupt or overwrite the host project's build cache.
-/// 2. **In-Memory Loading:** Reads the resulting `.erl` file and uses Erlang's 
-///    native compiler FFI to compile it directly into RAM, bypassing `.beam` disk I/O.
-/// 3. **Execution:** Invokes the dynamically loaded `gsh_entry` function, capturing 
-///    the evaluation success or gracefully intercepting Erlang VM runtime crashes.
 pub fn run(
   binding: Option(Binding),
   module_name: String,
   source_input: String,
   needs_export: Bool,
+  remote_node: Option(String),
 ) -> Evaluation {
   let args = [
     "compile-package", "--target", "erlang", "--package", ".", "--out",
@@ -90,90 +69,79 @@ pub fn run(
       let erl_path =
         "build/dev/erlang/gsh_eval/_gleam_artefacts/" <> module_name <> ".erl"
 
-      case runtime.compile_and_load(erl_path, module_name) {
-        Ok(_) -> {
-          case runtime.run_entry(module_name, "gsh_entry") {
-            Ok(_) -> {
-              let interface_path =
-                "build/dev/erlang/gsh_eval/package_interface.json"
-
-              // Only trigger 200ms CLI export on structural definitions (type, import, fn)
-              let _ = case needs_export {
-                True ->
-                  shellout.command(
-                    run: "gleam",
-                    with: [
-                      "export",
-                      "package-interface",
-                      "--out",
-                      interface_path,
-                    ],
-                    in: ".",
-                    opt: [],
-                  )
-                False -> Ok("")
-              }
-
-              let json_str = case simplifile.read(interface_path) {
-                Ok(s) -> s
-                Error(_) -> ""
-              }
-
-              // 1. Read raw inspect string captured in gsh_out.txt
-              let raw_val = case simplifile.read("gsh_out.txt") {
-                Ok(s) -> s
-                Error(_) -> ""
-              }
-              let _ = simplifile.delete("gsh_out.txt")
-
-              // 2. Infer or get type suffix
-              let type_suffix = case
-                types.infer_or_get_type(json_str, module_name, source_input)
-              {
-                Ok("Nil") -> ""
-                Ok(t) -> style.type_note(" : " <> t)
-                Error(_) -> ""
-              }
-
-              // 3. Format output and append the type
-              let final_output = case raw_val {
-                "" -> type_suffix <> "\n"
-                _ -> formatter.format_output(raw_val) <> type_suffix <> "\n"
-              }
-
-              Evaluation(
-                output: final_output,
-                success: True,
-                error_kind: NoError,
-                new_binding: persist_binding(binding),
-                new_import: None,
-                new_type: None,
-                new_function: None,
-                active_bindings: None,
-              )
-            }
-
-            Error(err) ->
-              Evaluation(
-                output: "Runtime Error: "
-                  <> formatter.format_error(string.inspect(err))
-                  <> "\n",
-                success: False,
-                error_kind: RuntimeError,
-                new_binding: None,
-                new_import: None,
-                new_type: None,
-                new_function: None,
-                active_bindings: None,
-              )
+      // Branch execution: Local RAM vs Remote RPC Injection
+      let exec_result = case remote_node {
+        option.Some(target) ->
+          runtime.rpc_compile_and_run(
+            target,
+            erl_path,
+            module_name,
+            "gsh_entry",
+          )
+        option.None -> {
+          case runtime.compile_and_load(erl_path, module_name) {
+            Ok(_) -> runtime.run_entry(module_name, "gsh_entry")
+            Error(err) -> Error(dynamic.string(err))
           }
+        }
+      }
+
+      case exec_result {
+        Ok(returned_dyn) -> {
+          let interface_path =
+            "build/dev/erlang/gsh_eval/package_interface.json"
+
+          let _ = case needs_export {
+            True ->
+              shellout.command(
+                run: "gleam",
+                with: ["export", "package-interface", "--out", interface_path],
+                in: ".",
+                opt: [],
+              )
+            False -> Ok("")
+          }
+
+          let json_str = case simplifile.read(interface_path) {
+            Ok(s) -> s
+            Error(_) -> ""
+          }
+
+          // Bypass decoders and forcibly cast the Dynamic back to a String.
+          let raw_val = unsafe_to_string(returned_dyn)
+
+          let type_suffix = case
+            types.infer_or_get_type(json_str, module_name, source_input)
+          {
+            Ok("Nil") -> ""
+            Ok(t) -> style.type_note(" : " <> t)
+            Error(_) -> ""
+          }
+
+          let final_output = case raw_val {
+            "" -> type_suffix <> "\n"
+            _ -> formatter.format_output(raw_val) <> type_suffix <> "\n"
+          }
+
+          Evaluation(
+            output: final_output,
+            success: True,
+            error_kind: NoError,
+            new_binding: persist_binding(binding),
+            new_import: None,
+            new_type: None,
+            new_function: None,
+            active_bindings: None,
+          )
         }
 
         Error(err) ->
           Evaluation(
-            output: "Erlang RAM Compilation Error: " <> err <> "\n",
+            output: "Execution Error: "
+              <> formatter.format_error(string.inspect(err))
+              <> "\n",
             success: False,
-            error_kind: CompileError,
+            error_kind: RuntimeError,
             new_binding: None,
             new_import: None,
             new_type: None,
