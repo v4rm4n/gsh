@@ -1,6 +1,5 @@
 *.beam
 *.ez
-/build
-erl_crash.dump
-
+/build/*
 !/build/gleebook/
+erl_crash.dump
