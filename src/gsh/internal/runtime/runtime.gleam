@@ -125,4 +125,8 @@ pub fn rpc_compile_and_run(
 
 /// Pings a remote node to verify network reachability and cookie authentication.
 @external(erlang, "ffi", "ping_node")
-pub fn ping_node(node: String) -> Bool
+pub fn ping_node(node: String) -> Result(Nil, String)
+
+/// Reloads every module whose compiled .beam changed on disk; returns their names.
+@external(erlang, "ffi", "reload_modified")
+pub fn reload_modified() -> List(String)

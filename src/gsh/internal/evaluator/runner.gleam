@@ -20,7 +20,6 @@ import gsh/internal/evaluator/style
 import gsh/internal/evaluator/types
 import gsh/internal/runtime/runtime
 import shellout
-import simplifile
 
 /// Zero-cost cast to force the Erlang RPC payload back into a Gleam String.
 @external(erlang, "gleam_stdlib", "identity")
@@ -40,7 +39,6 @@ pub fn run(
   binding: Option(Binding),
   module_name: String,
   source_input: String,
-  needs_export: Bool,
   remote_node: Option(String),
 ) -> Evaluation {
   let args = [
@@ -88,30 +86,15 @@ pub fn run(
 
       case exec_result {
         Ok(returned_dyn) -> {
-          let interface_path =
-            "build/dev/erlang/gsh_eval/package_interface.json"
-
-          let _ = case needs_export {
-            True ->
-              shellout.command(
-                run: "gleam",
-                with: ["export", "package-interface", "--out", interface_path],
-                in: ".",
-                opt: [],
-              )
-            False -> Ok("")
-          }
-
-          let json_str = case simplifile.read(interface_path) {
-            Ok(s) -> s
-            Error(_) -> ""
-          }
-
           // Bypass decoders and forcibly cast the Dynamic back to a String.
           let raw_val = unsafe_to_string(returned_dyn)
 
+          // No package interface is exported: definitions (fn/type/import)
+          // print nothing, so exporting one cost ~400ms per definition for an
+          // annotation that was never shown. Expression types come from
+          // inference over the input alone.
           let type_suffix = case
-            types.infer_or_get_type(json_str, module_name, source_input)
+            types.infer_or_get_type("", module_name, source_input)
           {
             Ok("Nil") -> ""
             Ok(t) -> style.type_note(" : " <> t)

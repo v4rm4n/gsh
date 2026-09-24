@@ -120,11 +120,10 @@ pub fn evaluate(
               }
               let b =
                 Binding(
+                  id: prompt_count,
                   kind: kind,
                   source: input,
-                  pattern: "",
                   names: names,
-                  value: "",
                 )
               #(False, False, False, True, Some(b), None)
             }
@@ -202,15 +201,7 @@ fn evaluate_loop(
   case simplifile.write(to: evaluator_path, contents: source) {
     Ok(_) -> {
       let start_time = runtime.system_time()
-      let needs_export = is_import || is_type || is_function
-      let result =
-        runner.run(
-          parsed_binding,
-          module_name,
-          input,
-          needs_export,
-          remote_node,
-        )
+      let result = runner.run(parsed_binding, module_name, input, remote_node)
       let elapsed_us = runtime.system_time() - start_time
       let _ = simplifile.delete(evaluator_path)
 
@@ -573,28 +564,31 @@ fn make_assert_source(
   <> "}\n"
 }
 
+/// Each binding gets its own cache slot, keyed by the prompt that created it.
+fn cache_key(binding: Binding) -> String {
+  "gsh_bind_" <> int.to_string(binding.id)
+}
+
 fn generate_current_binding(binding: Binding) -> String {
-  let cache_key = "gsh_bind_" <> string.join(binding.names, "_")
   let capture = build_capture_group(binding.names)
 
   "  "
   <> binding.source
   <> "\n"
   <> "  let _ = gsh_store_put(\""
-  <> cache_key
+  <> cache_key(binding)
   <> "\", "
   <> capture
   <> ")\n"
 }
 
 fn generate_historical_binding(binding: Binding) -> String {
-  let cache_key = "gsh_bind_" <> string.join(binding.names, "_")
   let capture = build_capture_group(binding.names)
 
   "  let "
   <> capture
   <> " = gsh_store_cache(\""
-  <> cache_key
+  <> cache_key(binding)
   <> "\", fn() {\n"
   <> "    "
   <> binding.source

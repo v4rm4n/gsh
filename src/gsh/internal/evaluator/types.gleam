@@ -182,13 +182,10 @@ pub fn package_interface_decoder() -> decode.Decoder(PackageInterface) {
 
 pub fn infer_or_get_type(
   json_string: String,
-  module_name: String,
+  _module_name: String,
   source_input: String,
 ) -> Result(String, Nil) {
-  case get_entry_type(json_string, module_name) {
-    Ok(t) -> Ok(t)
-    Error(_) -> infer_type_from_input(source_input, json_string)
-  }
+  infer_type_from_input(source_input, json_string)
 }
 
 fn infer_type_from_input(
@@ -318,10 +315,14 @@ fn lookup_in_package_interface(
       // 1. Check custom constructors (e.g. "S", "Fall", "Summer", "Ok")
       case lookup_constructor(pi, call_target) {
         Ok(t) -> Ok(t)
-        Error(_) -> {
-          // 2. Check function return types (e.g. "a", "config.load", "client.check_ip")
-          lookup_function_return(pi, call_target)
-        }
+        Error(_) ->
+          // Only a call has its function's return type: a bare name is a
+          // variable, and would otherwise get the return type of any function
+          // that happens to share its name.
+          case string.contains(expr, "(") {
+            True -> lookup_function_return(pi, call_target)
+            False -> Error(Nil)
+          }
       }
     }
   }

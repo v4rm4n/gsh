@@ -1,8 +1,8 @@
-// The `bindings` module provides introspection capabilities for the shell's 
+// The `bindings` module provides introspection capabilities for the shell's
 // lexical environment.
 //
-// It allows users to query the currently active REPL state to see exactly 
-// which variables are available in memory, handling both simple assignments 
+// It allows users to query the currently active REPL state to see exactly
+// which variables are available in memory, handling both simple assignments
 // and complex pattern-matched destructurings.
 
 // src/gsh/internal/command/bindings.gleam
@@ -12,41 +12,36 @@ import gleam/list
 import gsh/internal/evaluator/binding.{type Binding}
 import gsh/internal/input/terminal
 
-/// Renders a formatted, human-readable summary of all active variables 
-/// currently tracked by the REPL's state manager.
-/// 
+/// Renders a formatted, human-readable summary of every variable currently
+/// in scope in the REPL session.
+///
 /// **Output Format:**
-/// * Prints an indented list of variable names or binding patterns.
+/// * Prints an indented list of variable names, one per line.
 /// * Gracefully handles empty states by printing `(none)`.
-/// * Appends a summary footer with the total count of active bindings.
+/// * Appends a summary footer with the total count of variables in scope.
 pub fn show(bindings: List(Binding)) -> Nil {
+  let names = visible_names(bindings)
+
   terminal.println("")
   terminal.println("Loaded bindings:")
 
-  case bindings {
+  case names {
     [] -> terminal.println("  (none)")
-
-    _ ->
-      list.each(bindings, fn(binding) {
-        terminal.println("  " <> display_name(binding))
-      })
+    _ -> list.each(names, fn(name) { terminal.println("  " <> name) })
   }
 
   terminal.println("")
-  terminal.println("Total: " <> int.to_string(list.length(bindings)))
+  terminal.println("Total: " <> int.to_string(list.length(names)))
 }
 
-/// Resolves the most readable string representation for a given binding instance.
-/// 
-/// **Resolution Logic:**
-/// * **Single Bindings:** Extracts and prints the direct variable name 
-///   (e.g., `let x = 1` or `let Ok(val) = ...` yields `x` or `val`).
-/// * **Complex Destructuring:** If a statement binds multiple variables simultaneously 
-///   (e.g., `let #(a, b) = ...`), it falls back to printing the raw pattern string 
-///   to accurately represent the tuple or record structure.
-fn display_name(binding: Binding) -> String {
-  case binding.names {
-    [name] -> name
-    _ -> binding.pattern
-  }
+/// Every variable currently in scope, in the order it was first bound.
+///
+/// Destructuring bindings (`let #(a, b) = ...`) contribute each of their
+/// names. A variable that was rebound later (`let x = x + 1`) is listed once,
+/// because only its latest binding is visible, even though the session keeps
+/// every earlier binding to replay them in order.
+fn visible_names(bindings: List(Binding)) -> List(String) {
+  bindings
+  |> list.flat_map(fn(binding) { binding.names })
+  |> list.unique
 }

@@ -7,8 +7,7 @@
     get_exports/1,
     load_and_run/2,
     store_put/2,
-    store_get/1,
-    store_has/1,
+    store_lookup/1,
     get_args/0,
     boot_app/1,
     pid_from_string/1,
@@ -22,7 +21,8 @@
     start_network/2,
     set_cookie/1,
     rpc_compile_and_run/4,
-    ping_node/1
+    ping_node/1,
+    reload_modified/0
 ]).
 
 %% Returns the current system time in microseconds to guarantee 
@@ -43,39 +43,27 @@ app_version(AppAtom) ->
 %% and returns a list of its public functions as binaries.
 get_exports(ModuleNameBin) ->
     try
-        %% Convert binary to an atom
         ModuleName = binary_to_atom(ModuleNameBin, utf8),
-        
-        %% Ensure the module is loaded into the VM memory
         case code:ensure_loaded(ModuleName) of
             {module, ModuleName} ->
-                %% module_info(exports) returns a list like [{to_string, 1}, {parse, 1}]
                 Exports = ModuleName:module_info(exports),
-                
-                %% Extract just the function names, ignoring internal module_info functions
                 [unicode:characters_to_binary(atom_to_list(F)) || {F, _Arity} <- Exports, F =/= module_info];
             _ -> 
-                [] %% Module not found
+                []
         end
     catch
-        _:_ -> [] %% Failsafe if anything crashes
+        _:_ -> []
     end.
 
 load_and_run(ModuleNameBin, FunctionNameBin) ->
     Module = binary_to_atom(ModuleNameBin, utf8),
     Function = binary_to_atom(FunctionNameBin, utf8),
-
-    %% Purge old version from memory
     code:purge(Module),
     code:delete(Module),
-
-    %% Dynamically locate ebin directories under build/
     case filelib:wildcard("build/dev/erlang/*/ebin") of
         [] -> ok;
         Paths -> lists:foreach(fun(P) -> code:add_patha(P) end, Paths)
     end,
-
-    %% Hot-load the freshly compiled bytecode
     case code:load_file(Module) of
         {module, Module} ->
             try
@@ -89,15 +77,19 @@ load_and_run(ModuleNameBin, FunctionNameBin) ->
             {error, Reason}
     end.
 
-store_put(KeyBin, Value) ->
-    put(KeyBin, Value),
+%% Side-effect cache used by generated evaluation modules (see store.gleam).
+%% Keys are namespaced so they can't collide with anything evaluated code keeps
+%% in the process dictionary, and values are wrapped so a cached `undefined`
+%% atom (e.g. a Gleam `Undefined` constructor) isn't mistaken for a missing entry.
+store_put(Key, Value) ->
+    put({gsh_store, Key}, {cached, Value}),
     Value.
 
-store_get(KeyBin) ->
-    get(KeyBin).
-
-store_has(KeyBin) ->
-    get(KeyBin) =/= undefined.
+store_lookup(Key) ->
+    case get({gsh_store, Key}) of
+        {cached, Value} -> {ok, Value};
+        undefined -> {error, nil}
+    end.
 
 %% Reads arguments passed after `--` in the CLI
 get_args() ->
@@ -105,55 +97,45 @@ get_args() ->
 
 %% Dynamically loads a Gleam module and runs its main() in a background process
 boot_app(ModuleNameBin) ->
-    %% Convert Gleam path syntax (my_app/server) to Erlang module syntax (my_app@server)
     NormalizedBin = binary:replace(ModuleNameBin, <<"/">>, <<"@">>, [global]),
     Module = binary_to_atom(NormalizedBin, utf8),
-    
     case code:ensure_loaded(Module) of
         {module, Module} ->
             Pid = spawn(fun() -> apply(Module, main, []) end),
             {ok, Pid};
         {error, Reason} -> 
-            %% Capture the exact Erlang error (e.g. 'nofile')
             ReasonStr = list_to_binary(io_lib:format("~p", [Reason])),
             {error, <<"Could not load '", NormalizedBin/binary, "': ", ReasonStr/binary>>}
     end.
 
 %% Converts a string like "<0.83.0>" into an actual Erlang PID
 pid_from_string(Bin) ->
-    list_to_pid(binary_to_list(Bin)).
+    Str = string:trim(binary_to_list(Bin)),
+    Full = case Str of
+        "<" ++ _ -> Str;
+        _ -> "<" ++ Str ++ ">"
+    end,
+    list_to_pid(Full).
 
 %% Creates an in-memory table and reroutes logs into it
 setup_logger() ->
-    %% Create a public, named ring-buffer in memory
     ets:new(gsh_logs, [named_table, public, ordered_set]),
-    
-    %% Kill the default handler that floods the screen
     logger:remove_handler(default),
-    
-    %% Add our custom handler that traps logs in ETS
     logger:add_handler(gsh_ui, ?MODULE, #{
         formatter => {logger_formatter, #{
             single_line => true,
-            %% Explicitly inject the PID into the log string
             template => [time, " ", pid, " [", level, "] ", msg]
         }}
     }).
 
 %% The callback Erlang triggers every time a background app logs something
 log(LogEvent, Config) ->
-    %% Format the log using standard Erlang tools
     {Formatter, FormatterConfig} = maps:get(formatter, Config),
     Formatted = Formatter:format(LogEvent, FormatterConfig),
-    
     Bin = unicode:characters_to_binary(Formatted, utf8),
     Clean = binary:replace(Bin, <<"\n">>, <<>>, [global]),
-    
-    %% Store it in ETS with a timestamp as the key so it sorts chronologically
     Time = erlang:system_time(microsecond),
     ets:insert(gsh_logs, {Time, Clean}),
-    
-    %% Keep only the last 50 logs to prevent memory leaks
     case ets:info(gsh_logs, size) > 50 of
         true -> ets:delete(gsh_logs, ets:first(gsh_logs));
         false -> ok
@@ -178,8 +160,6 @@ start_observer() ->
 compile_and_load(ErlFilePath, ModuleNameStr) ->
     ErlFile = binary_to_list(ErlFilePath),
     ModuleName = binary_to_atom(ModuleNameStr, utf8),
-    
-    %% FIX: Change '->' to 'of' on this line!
     case compile:file(ErlFile, [binary, report_errors]) of
         {ok, ModuleName, Binary} ->
             case code:load_binary(ModuleName, ErlFile, Binary) of
@@ -196,7 +176,6 @@ compile_and_load(ErlFilePath, ModuleNameStr) ->
 run_entry(ModuleBin, FunctionBin) ->
     Module = binary_to_atom(ModuleBin, utf8),
     Function = binary_to_atom(FunctionBin, utf8),
-    
     try
         Result = Module:Function(),
         {ok, Result}
@@ -215,40 +194,45 @@ ensure_code_paths() ->
     end,
     ok.
 
-start_network(Name, NameType) ->
-    NodeName = list_to_atom(binary_to_list(Name)),
-    Type = list_to_atom(binary_to_list(NameType)),
-    % start/1 is deprecated in newer OTPs, using start/1 with map or net_kernel:start/1
+start_network(NameBin, NameTypeBin) ->
+    NodeName = binary_to_atom(NameBin, utf8),
+    Type = binary_to_atom(NameTypeBin, utf8),
+    net_kernel:stop(),
     case net_kernel:start([NodeName, Type]) of
         {ok, _Pid} -> {ok, nil};
+        {error, {already_started, _}} -> {ok, nil};
         {error, Reason} -> {error, list_to_binary(io_lib:format("~p", [Reason]))}
     end.
 
-set_cookie(Cookie) ->
-    CookieAtom = list_to_atom(binary_to_list(Cookie)),
-    erlang:set_cookie(node(), CookieAtom),
+set_cookie(CookieBin) ->
+    CookieAtom = binary_to_atom(CookieBin, utf8),
+    erlang:set_cookie(CookieAtom),
     nil.
 
-%% Compiles an Erlang file to binary locally, then pushes and executes it on a remote node.
-rpc_compile_and_run(NodeStr, ErlPathStr, ModuleStr, FunctionStr) ->
-    Node = list_to_atom(binary_to_list(NodeStr)),
-    ErlPath = binary_to_list(ErlPathStr),
-    Module = list_to_atom(binary_to_list(ModuleStr)),
-    Function = list_to_atom(binary_to_list(FunctionStr)),
-
-    % 1. Compile the local .erl file directly to a binary payload in memory
-    case compile:file(ErlPath, [binary]) of
+%% Compiles the eval module locally, then runs it inside a persistent
+%% gsh_agent process on the remote node. A plain rpc:call would run each
+%% evaluation in a brand-new process, losing the process-dictionary
+%% binding cache and re-running every historical side effect on the remote.
+rpc_compile_and_run(NodeBin, ErlPathBin, ModuleBin, FunctionBin) ->
+    Node = binary_to_atom(NodeBin, utf8),
+    Module = binary_to_atom(ModuleBin, utf8),
+    Function = binary_to_atom(FunctionBin, utf8),
+    case compile:file(binary_to_list(ErlPathBin), [binary]) of
         {ok, Module, Binary} ->
-            % 2. Push the binary across the network to the live server
-            case rpc:call(Node, code, load_binary, [Module, "", Binary]) of
-                {module, Module} ->
-                    % 3. Execute the function inside the production node!
-                    case rpc:call(Node, Module, Function, []) of
-                        {badrpc, Reason} -> {error, {badrpc, Reason}};
-                        Result -> {ok, Result}
+            case remote_agent(Node) of
+                {ok, Agent} ->
+                    Ref = erlang:monitor(process, Agent),
+                    Agent ! {run, self(), Ref, Module, Binary, Function},
+                    receive
+                        {Ref, Reply} ->
+                            erlang:demonitor(Ref, [flush]),
+                            Reply;
+                        {'DOWN', Ref, process, _, Reason} ->
+                            erase({gsh_agent, Node}),
+                            {error, {remote_agent_down, Reason}}
                     end;
-                Error ->
-                    {error, {load_failed, Error}}
+                {error, _} = Err ->
+                    Err
             end;
         error ->
             {error, compile_failed};
@@ -256,10 +240,74 @@ rpc_compile_and_run(NodeStr, ErlPathStr, ModuleStr, FunctionStr) ->
             {error, {compile_failed, Errors}}
     end.
 
-%% Actively attempts to handshake with a remote node
-ping_node(NodeStr) ->
-    Node = list_to_atom(binary_to_list(NodeStr)),
-    case net_adm:ping(Node) of
-        pong -> true;
-        pang -> false
+%% Starts this session's evaluation agent on the remote node (once per session)
+%% and remembers its pid in the REPL process's dictionary. The agent monitors
+%% this process, so it exits when the session ends or the connection drops.
+remote_agent(Node) ->
+    case get({gsh_agent, Node}) of
+        Pid when is_pid(Pid) ->
+            {ok, Pid};
+        undefined ->
+            case ensure_agent_code(Node) of
+                ok ->
+                    case rpc:call(Node, gsh_agent, start, [self()]) of
+                        Pid when is_pid(Pid) ->
+                            put({gsh_agent, Node}, Pid),
+                            {ok, Pid};
+                        Other ->
+                            {error, {agent_start_failed, Other}}
+                    end;
+                {error, _} = Err ->
+                    Err
+            end
     end.
+
+%% Loads gsh_agent on the remote node only if it's missing or different.
+%% Re-loading identical code would still age the version other sessions'
+%% agents are running, and a second re-load would kill them.
+ensure_agent_code(Node) ->
+    case code:get_object_code(gsh_agent) of
+        {gsh_agent, Bin, File} ->
+            {ok, {gsh_agent, Md5}} = beam_lib:md5(Bin),
+            case rpc:call(Node, erlang, get_module_info, [gsh_agent, md5]) of
+                Md5 ->
+                    ok;
+                _ ->
+                    case rpc:call(Node, code, load_binary, [gsh_agent, File, Bin]) of
+                        {module, gsh_agent} -> ok;
+                        Other -> {error, {agent_load_failed, Other}}
+                    end
+            end;
+        error ->
+            {error, <<"gsh_agent.beam not found: add gsh_agent.erl next to ffi.erl in gsh's src/">>}
+    end.
+
+%% Handshakes with a remote node. On failure, reports the local node name
+%% and a fingerprint of the cookie actually used, so a mismatch can be
+%% checked without printing the cookie itself.
+ping_node(NodeBin) ->
+    Node = binary_to_atom(NodeBin, utf8),
+    case net_adm:ping(Node) of
+        pong ->
+            {ok, nil};
+        pang ->
+            Fingerprint = case is_alive() of
+                true -> erlang:phash2(erlang:get_cookie(Node));
+                false -> none
+            end,
+            {error, unicode:characters_to_binary(io_lib:format(
+                "local node ~p, cookie fingerprint ~p. "
+                "On the remote, erlang:phash2(erlang:get_cookie()). must print the same number.",
+                [node(), Fingerprint]))}
+    end.
+
+%% Reloads every module whose .beam on disk differs from the loaded version,
+%% like IEx's recompile. Returns the names of the modules it reloaded.
+reload_modified() ->
+    lists:filtermap(fun(M) ->
+        code:purge(M),
+        case code:load_file(M) of
+            {module, M} -> {true, atom_to_binary(M, utf8)};
+            {error, _} -> false
+        end
+    end, code:modified_modules()).

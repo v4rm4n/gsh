@@ -136,27 +136,32 @@ pub fn main() -> Nil {
       [],
     )
 
-  // Initialize the distributed node BEFORE setting the cookie
-  let _ = case sname, name {
-    option.Some(n), _ -> runtime.start_network(n, "shortnames")
-    _, option.Some(n) -> runtime.start_network(n, "longnames")
-    option.None, option.None -> {
-      // Auto-start a hidden node if they provided a remsh target but no local name
-      case remsh {
-        option.Some(_) ->
-          runtime.start_network(
-            "gsh_" <> int.to_string(runtime.system_time()),
-            "shortnames",
-          )
-        option.None -> Ok(Nil)
-      }
-    }
+  let network = case sname, name, remsh {
+    option.Some(n), _, _ -> option.Some(runtime.start_network(n, "shortnames"))
+    _, option.Some(n), _ -> option.Some(runtime.start_network(n, "longnames"))
+    _, _, option.Some(_) ->
+      option.Some(runtime.start_network(
+        "gsh_" <> int.to_string(runtime.system_time()),
+        "shortnames",
+      ))
+    _, _, option.None -> option.None
   }
 
-  // Set the authentication cookie if provided
-  case cookie {
-    option.Some(c) -> runtime.set_cookie(c)
-    option.None -> Nil
+  let network_up = case network {
+    option.Some(Ok(Nil)) -> True
+    option.Some(Error(err)) -> {
+      terminal.println(
+        "\u{001b}[31merror:\u{001b}[0m Could not start distribution: " <> err,
+      )
+      False
+    }
+    option.None -> False
+  }
+
+  // set_cookie raises on a node that isn't alive
+  case network_up, cookie {
+    True, option.Some(c) -> runtime.set_cookie(c)
+    _, _ -> Nil
   }
 
   // Use the filtered `app_args` instead of `cli_args` for booting background apps
@@ -189,19 +194,19 @@ pub fn main() -> Nil {
   let valid_remsh = case remsh {
     option.Some(target) -> {
       case runtime.ping_node(target) {
-        True -> {
+        Ok(Nil) -> {
           terminal.println(
             "\u{001b}[36mConnected to remote node: " <> target <> "\u{001b}[0m",
           )
           option.Some(target)
         }
-        False -> {
+        Error(diagnostic) -> {
           terminal.println(
             "\u{001b}[31merror:\u{001b}[0m Could not reach remote node '"
             <> target
             <> "'. (Wrong cookie or name?)",
           )
-          // Revert to local execution so they don't accidentally wipe their local database thinking they are on prod!
+          terminal.println("  " <> diagnostic)
           terminal.println(
             "\u{001b}[33mwarning:\u{001b}[0m Falling back to local REPL.",
           )
@@ -326,29 +331,43 @@ fn handle_input(input: String, state: ShellState) -> Nil {
     }
 
     command.Compile -> {
-      case runner.build_project() {
-        Ok("") -> terminal.println("Noop")
+      case state.remote_node {
+        // Remote hot loading is disabled: rebuilding locally would make gsh
+        // type-check against code the remote node isn't running.
+        option.Some(target) ->
+          terminal.println(
+            "\u{001b}[33mwarning:\u{001b}[0m :cc is disabled while connected to "
+            <> target
+            <> ". Ship code changes with a deploy.",
+          )
 
-        Ok(output) -> {
-          terminal.println(output)
+        option.None ->
+          case runner.build_project() {
+            Ok("") -> terminal.println("Noop")
 
-          // Auto-reload all active imports to reflect the new disk artifacts
-          list.each(state.imports, fn(imp) {
-            let path = string.replace(imp, "import ", "") |> string.trim()
-            let real_path = case string.split_once(path, on: " as ") {
-              Ok(#(p, _)) -> string.trim(p)
-              Error(_) -> path
+            Ok(output) -> {
+              terminal.println(output)
+
+              // Reload every module whose .beam changed on disk, like IEx's recompile
+              case runtime.reload_modified() {
+                [] -> terminal.println("Ok (nothing changed)")
+                mods ->
+                  terminal.println(
+                    "Ok (reloaded: "
+                    <> string.join(
+                      list.map(mods, string.replace(_, "@", "/")),
+                      ", ",
+                    )
+                    <> ")",
+                  )
+              }
             }
-            runtime.hot_reload(real_path)
-          })
 
-          terminal.println("Ok (Imports hot-reloaded)")
-        }
-
-        Error(#(_, output)) -> {
-          terminal.println(output)
-          terminal.println("Error")
-        }
+            Error(#(_, output)) -> {
+              terminal.println(output)
+              terminal.println("Error")
+            }
+          }
       }
 
       shell_loop(

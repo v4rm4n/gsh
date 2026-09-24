@@ -1,8 +1,6 @@
 # GSH
 
 - [ℹ️ About](index.md)
-- [🏞️ Environment]()
-- [🕹️ Remote Shells]()
-- [🔃 Hot-Swapping]()
-- [⛏️ Prying]()
-- [🧰 Native Tooling]()
+- [👶 Basics](1_basics.md)
+- [🧬 Builtins](2_builtins.md)
+- [🎛️ REPL Driven Dev.]()
