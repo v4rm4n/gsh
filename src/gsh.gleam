@@ -1,17 +1,20 @@
 //// `gsh` is the core entry point for the Interactive Gleam Shell.
 ////
-//// It acts as a development orchestrator, providing three main capabilities:
+//// It acts as a development orchestrator, providing four main capabilities:
 //// 
 //// 1. **Zero-Config Bootloader:** Intercepts CLI arguments to dynamically boot host 
 ////    applications in the background (e.g., `gleam run -m gsh -- my_app`).
-//// 2. **Hot Code Swapping:** Provides a `compile` command to manually rebuild the host 
-////    project and trigger Erlang `code:purge` and `code:load_file`, hot-swapping live 
-////    module updates without restarting the shell.
+//// 2. **Hot Code Swapping:** Provides a `compile` command that rebuilds the host 
+////    project and reloads every module whose compiled code changed, without 
+////    restarting the shell. It is disabled while connected to a remote node.
 //// 3. **Persistent REPL:** A live-node interactive shell that maintains VM state, 
 ////    memoizes side effects, and safely handles runtime exceptions while toggling
 ////    terminal raw mode to ensure clean I/O. It supports standard expression evaluation, 
 ////    lexical variable shadowing, and convenient top-level module syntax (`fn`, `type`) 
 ////    for rapid prototyping.
+//// 4. **Pry:** Application code can pause a process at a `pry` call. The shell 
+////    attaches to it with `:pry`, evaluates code inside that process, and lets it 
+////    carry on with `:continue`.
 
 // src/gsh.gleam
 
@@ -30,11 +33,13 @@ import gsh/internal/evaluator/docs
 import gsh/internal/evaluator/evaluator
 import gsh/internal/evaluator/parser
 import gsh/internal/evaluator/runner
+import gsh/internal/evaluator/target.{type Target, Local, Pried, Remote}
 import gsh/internal/input/buffer
 import gsh/internal/input/editor
 import gsh/internal/input/key
 import gsh/internal/input/reader
 import gsh/internal/input/terminal
+import gsh/internal/runtime/pry
 import gsh/internal/runtime/runtime.{app_version, system_version}
 import simplifile
 
@@ -46,8 +51,8 @@ pub type ShellState {
     /// Increments on every REPL execution to guarantee uniquely named Erlang 
     /// modules (e.g., `gsh_eval_1`, `gsh_eval_2`), preventing VM cache collisions.
     prompt_count: Int,
-    /// Active `let` bindings. The shell intelligently drops older bindings 
-    /// only when all of their extracted variables have been fully shadowed.
+    /// Active `let` bindings of the current scope: the main session's, or,
+    /// while attached to a paused process, the pry session's.
     bindings: List(binding.Binding),
     /// Active `import` statements. Checked sequentially to discard duplicates.
     imports: List(String),
@@ -66,6 +71,19 @@ pub type ShellState {
     debug: Bool,
     /// Tracks the target node for remote evaluations
     remote_node: option.Option(String),
+    /// The paused process this shell is attached to, if any.
+    pry: option.Option(PrySession),
+  )
+}
+
+/// An attachment to a process paused at a `pry` call.
+pub type PrySession {
+  PrySession(
+    paused: pry.Paused,
+    /// The main session's bindings, restored on `:continue`. They stay out of
+    /// the pry session: replaying them inside the paused process would miss
+    /// the cache there and re-run their side effects.
+    saved_bindings: List(binding.Binding),
   )
 }
 
@@ -74,9 +92,14 @@ pub type ShellState {
 /// 1. Cleans up any orphaned evaluation files from previous crashed sessions.
 /// 2. Intercepts trailing CLI arguments to boot background host applications.
 /// 3. Injects a custom logger to prevent staircasing in background logs.
-/// 4. Places the terminal into raw mode and starts the recursive REPL loop.
+/// 4. Starts the pry server, so application processes can pause for the shell.
+/// 5. Places the terminal into raw mode and starts the recursive REPL loop.
 pub fn main() -> Nil {
   runtime.ensure_code_paths()
+
+  // Survive crashes of processes spawned from REPL expressions (they are
+  // linked to this process); they're reported before the next prompt instead.
+  runtime.trap_exits()
 
   // 1. Clean up any orphaned `gsh_eval_X.gleam` files from previous crashes
   case simplifile.read_directory("src") {
@@ -93,6 +116,17 @@ pub fn main() -> Nil {
     }
     Error(_) -> Nil
   }
+
+  // ...and the package interface from a previous session, which describes
+  // that session's REPL functions and types rather than this one's. A fresh
+  // one is exported in the background, so calls to project functions show
+  // their types from the first prompt.
+  runner.clear_interface()
+  process.spawn(runner.export_interface)
+
+  // Keeps output from processes started through the shell lined up while the
+  // terminal is in raw mode (see `use_output_proxy`).
+  runtime.start_output_proxy()
 
   // 2. Wrap the logger to prevent staircasing in background jobs
   runtime.setup_logger()
@@ -164,6 +198,9 @@ pub fn main() -> Nil {
     _, _ -> Nil
   }
 
+  // 4. Start the pry server before booting apps, so they can pause right away
+  pry.start_server(process.self())
+
   // Use the filtered `app_args` instead of `cli_args` for booting background apps
   let apps_to_boot =
     list.append(cfg.auto_boot_apps, app_args)
@@ -173,6 +210,7 @@ pub fn main() -> Nil {
     True -> Nil
     False -> {
       terminal.println("Booting background applications...")
+      runtime.use_output_proxy(True)
       list.each(apps_to_boot, fn(app_module) {
         case runtime.boot_app(app_module) {
           Ok(pid) ->
@@ -180,6 +218,7 @@ pub fn main() -> Nil {
           Error(err) -> terminal.println(app_module <> " -> Failed: " <> err)
         }
       })
+      runtime.use_output_proxy(False)
       terminal.println("")
       process.sleep(50)
     }
@@ -227,6 +266,7 @@ pub fn main() -> Nil {
     functions: [],
     debug: False,
     remote_node: valid_remsh,
+    pry: option.None,
   ))
 
   terminal.disable_bracketed_paste()
@@ -286,7 +326,12 @@ fn banner() -> Nil {
 /// The recursive heartbeat of the REPL. 
 /// Prompts for input, processes it, and recurses with the updated state.
 fn shell_loop(state: ShellState) -> Nil {
-  let prompt = "gsh(" <> int.to_string(state.prompt_count) <> ")> "
+  report_exits()
+
+  let prompt = case state.pry {
+    option.Some(session) -> "pry(" <> session.paused.label <> ")> "
+    option.None -> "gsh(" <> int.to_string(state.prompt_count) <> ")> "
+  }
 
   let input = read_command(prompt, state)
 
@@ -294,6 +339,16 @@ fn shell_loop(state: ShellState) -> Nil {
     "" -> shell_loop(state)
 
     _ -> handle_input(input, state)
+  }
+}
+
+/// Where the next evaluation runs: inside the attached paused process,
+/// on the remote node, or in this shell's own process.
+fn evaluation_target(state: ShellState) -> Target {
+  case state.pry, state.remote_node {
+    option.Some(session), _ -> Pried(session.paused.pid, session.paused.id)
+    option.None, option.Some(node) -> Remote(node)
+    option.None, option.None -> Local
   }
 }
 
@@ -306,8 +361,9 @@ fn shell_loop(state: ShellState) -> Nil {
 /// * **State Pruning:** When passing code to the evaluator, it intelligently filters the 
 ///   returned AST bindings against the historical state, safely pruning old source strings 
 ///   when a variable, type, or function is fully shadowed or redefined.
-/// * **Hot Swapping:** Intercepts the `compile` command to trigger background host 
-///   rebuilds and automatically hot-reloads the VM caches for all active imports.
+/// * **Hot Swapping:** Intercepts the `compile` command to rebuild the project 
+///   and reload every module whose compiled code changed.
+/// * **Pry:** Attaches to and resumes processes paused at `pry` calls.
 fn handle_input(input: String, state: ShellState) -> Nil {
   let history = list.append(state.history, [input])
 
@@ -348,9 +404,13 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             Ok(output) -> {
               terminal.println(output)
 
+              // The project changed, so refresh the types of its functions.
+              runner.export_interface()
+
               // Reload every module whose .beam changed on disk, like IEx's recompile
               case runtime.reload_modified() {
-                [] -> terminal.println("Ok (nothing changed)")
+                // Nothing already loaded changed. New modules load on first use.
+                [] -> terminal.println("Ok")
                 mods ->
                   terminal.println(
                     "Ok (reloaded: "
@@ -456,6 +516,136 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       shell_loop(ShellState(..state, history:))
     }
 
+    command.PryAttach -> {
+      let state = ShellState(..state, history:)
+
+      case state.pry {
+        option.Some(session) -> {
+          terminal.println(
+            "Already attached to "
+            <> pry.pid_text(session.paused.pid)
+            <> ". Type :continue first.",
+          )
+          shell_loop(ShellState(..state, prompt_count: state.prompt_count + 1))
+        }
+
+        option.None ->
+          case pry.take() {
+            Ok(paused) -> shell_loop(attach(state, paused))
+            Error(Nil) -> {
+              terminal.println(nothing_waiting(state))
+              shell_loop(
+                ShellState(..state, prompt_count: state.prompt_count + 1),
+              )
+            }
+          }
+      }
+    }
+
+    command.PryAttachId(id) -> {
+      let state = ShellState(..state, history:)
+
+      case state.pry {
+        option.Some(session) -> {
+          terminal.println(
+            "Already attached to "
+            <> pry.pid_text(session.paused.pid)
+            <> ". Type :continue first.",
+          )
+          shell_loop(ShellState(..state, prompt_count: state.prompt_count + 1))
+        }
+
+        option.None ->
+          case pry.take_id(id) {
+            Ok(paused) -> shell_loop(attach(state, paused))
+            Error(Nil) -> {
+              terminal.println(
+                "No process is waiting as #"
+                <> int.to_string(id)
+                <> ". Type :pry list to see the waiting ones.",
+              )
+              shell_loop(
+                ShellState(..state, prompt_count: state.prompt_count + 1),
+              )
+            }
+          }
+      }
+    }
+
+    command.PryList -> {
+      case pry.list() {
+        [] -> terminal.println(nothing_waiting(state))
+        waiting -> {
+          terminal.println("Waiting at pry points:")
+          list.each(waiting, fn(paused) {
+            terminal.println(
+              "  #"
+              <> int.to_string(paused.id)
+              <> "  "
+              <> pry.pid_text(paused.pid)
+              <> "  \""
+              <> paused.label
+              <> "\"  "
+              <> paused.location,
+            )
+          })
+          terminal.println("Type :pry <id> to attach, or :pry for the oldest.")
+        }
+      }
+
+      shell_loop(
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+      )
+    }
+
+    command.PryContinue -> {
+      let state =
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:)
+
+      case state.pry {
+        option.None -> {
+          terminal.println("Not attached to a paused process.")
+          shell_loop(state)
+        }
+
+        option.Some(session) -> {
+          pry.resume(session.paused.pid, session.paused.id)
+          terminal.println("Resumed " <> pry.pid_text(session.paused.pid))
+          // Give the resumed process a moment, so whatever it prints straight
+          // away lands before the prompt instead of after it.
+          process.sleep(50)
+          announce_waiting(pry.waiting())
+
+          shell_loop(
+            ShellState(
+              ..state,
+              pry: option.None,
+              bindings: session.saved_bindings,
+            ),
+          )
+        }
+      }
+    }
+
+    command.PryEnable(on) -> {
+      let released = pry.set_enabled(on)
+
+      case on, released {
+        True, _ -> terminal.println("Pry points enabled.")
+        False, 0 -> terminal.println("Pry points disabled.")
+        False, n ->
+          terminal.println(
+            "Pry points disabled. Resumed "
+            <> int.to_string(n)
+            <> " waiting process(es).",
+          )
+      }
+
+      shell_loop(
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+      )
+    }
+
     command.NotCommand -> {
       let is_duplicate_import =
         string.starts_with(input, "import ")
@@ -474,6 +664,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
           // Exit raw mode so side effects print normally!
           let assert Ok(_) = tty.exit_raw()
 
+          // Processes the code spawns inherit the output proxy, so their
+          // output stays lined up after we're back in raw mode.
+          runtime.use_output_proxy(True)
           let result =
             evaluator.evaluate(
               input,
@@ -483,8 +676,9 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               state.functions,
               state.debug,
               state.prompt_count,
-              state.remote_node,
+              evaluation_target(state),
             )
+          runtime.use_output_proxy(False)
 
           // Print evaluator output while still in normal mode
           io.print(result.output)
@@ -499,7 +693,6 @@ fn handle_input(input: String, state: ShellState) -> Nil {
               case result.new_function {
                 option.Some(f) -> [f.0]
                 option.None ->
-                  // ADD THIS BRANCH:
                   case result.new_import {
                     option.Some(imp) -> parser.get_imported_names(imp)
                     option.None -> []
@@ -561,20 +754,149 @@ fn handle_input(input: String, state: ShellState) -> Nil {
             option.None -> state.imports
           }
 
-          shell_loop(
-            ShellState(
-              ..state,
-              prompt_count: state.prompt_count + 1,
-              bindings:,
-              imports:,
-              types:,
-              history:,
-              functions:,
-            ),
+          ShellState(
+            ..state,
+            prompt_count: state.prompt_count + 1,
+            bindings:,
+            imports:,
+            types:,
+            history:,
+            functions:,
           )
+          |> detach_if_exited
+          |> shell_loop
         }
       }
     }
+  }
+}
+
+/// Attaches the shell to a paused process: switches to a fresh binding scope,
+/// then binds the value passed to `pry` and prints it.
+fn attach(state: ShellState, paused: pry.Paused) -> ShellState {
+  terminal.println(
+    "Attached to #"
+    <> int.to_string(paused.id)
+    <> " "
+    <> pry.pid_text(paused.pid)
+    <> " at \""
+    <> paused.label
+    <> "\" ("
+    <> paused.location
+    <> ")",
+  )
+
+  let name = pry_variable(paused.label)
+  let input =
+    "let " <> name <> " = gsh_pry_value(" <> int.to_string(paused.id) <> ")"
+
+  let assert Ok(_) = tty.exit_raw()
+  runtime.use_output_proxy(True)
+  let result =
+    evaluator.evaluate(
+      input,
+      [],
+      state.imports,
+      state.types,
+      state.functions,
+      state.debug,
+      state.prompt_count,
+      Pried(paused.pid, paused.id),
+    )
+  runtime.use_output_proxy(False)
+  io.print(name <> " = " <> result.output)
+  let assert Ok(_) = tty.enter_raw()
+
+  announce_waiting(paused.waiting)
+
+  let bindings = case result.new_binding {
+    option.Some(b) -> [b]
+    option.None -> []
+  }
+
+  ShellState(
+    ..state,
+    prompt_count: state.prompt_count + 1,
+    bindings:,
+    pry: option.Some(PrySession(paused:, saved_bindings: state.bindings)),
+  )
+}
+
+/// Returns to the main session if the attached process has died
+/// (for example, the code evaluated in it crashed it).
+fn detach_if_exited(state: ShellState) -> ShellState {
+  case state.pry {
+    option.Some(session) ->
+      case process.is_alive(session.paused.pid) {
+        True -> state
+        False -> {
+          terminal.println(
+            pry.pid_text(session.paused.pid)
+            <> " exited. Back to the main session.",
+          )
+          ShellState(
+            ..state,
+            pry: option.None,
+            bindings: session.saved_bindings,
+          )
+        }
+      }
+    option.None -> state
+  }
+}
+
+/// Reports linked processes that crashed since the last prompt.
+fn report_exits() -> Nil {
+  list.each(runtime.drain_exits(), fn(exit) {
+    terminal.println(
+      "\u{001b}[33m[exit]\u{001b}[0m " <> exit.0 <> " exited: " <> exit.1,
+    )
+  })
+}
+
+fn nothing_waiting(state: ShellState) -> String {
+  case state.remote_node {
+    option.Some(node) ->
+      "No process is waiting at a pry point. Pry attaches to processes on this node, not "
+      <> node
+      <> "."
+    option.None -> "No process is waiting at a pry point."
+  }
+}
+
+fn announce_waiting(count: Int) -> Nil {
+  case count {
+    0 -> Nil
+    n ->
+      terminal.println(
+        int.to_string(n) <> " more waiting at pry points. Type :pry to attach.",
+      )
+  }
+}
+
+/// The variable a pried value is bound to: the label when it's a valid Gleam
+/// variable name, otherwise `pried`.
+fn pry_variable(label: String) -> String {
+  let reserved = [
+    "as", "assert", "auto", "case", "const", "delegate", "derive", "echo",
+    "else", "fn", "if", "implement", "import", "let", "macro", "opaque", "panic",
+    "pub", "test", "todo", "type", "use",
+  ]
+  let lower = "abcdefghijklmnopqrstuvwxyz"
+  let tail = lower <> "0123456789_"
+
+  case string.to_graphemes(label) {
+    [first, ..rest] -> {
+      let valid =
+        string.contains(lower, first)
+        && list.all(rest, fn(g) { string.contains(tail, g) })
+        && !list.contains(reserved, label)
+      case valid {
+        True -> label
+        False -> "pried"
+      }
+    }
+    [] -> "pried"
   }
 }
 

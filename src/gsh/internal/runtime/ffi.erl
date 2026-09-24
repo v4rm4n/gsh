@@ -22,7 +22,11 @@
     set_cookie/1,
     rpc_compile_and_run/4,
     ping_node/1,
-    reload_modified/0
+    reload_modified/0,
+    trap_exits/0,
+    drain_exits/0,
+    start_output_proxy/0,
+    use_output_proxy/1
 ]).
 
 %% Returns the current system time in microseconds to guarantee 
@@ -304,10 +308,122 @@ ping_node(NodeBin) ->
 %% Reloads every module whose .beam on disk differs from the loaded version,
 %% like IEx's recompile. Returns the names of the modules it reloaded.
 reload_modified() ->
+    Modified = [M || M <- code:modified_modules(), not is_eval_module(M)],
     lists:filtermap(fun(M) ->
         code:purge(M),
         case code:load_file(M) of
             {module, M} -> {true, atom_to_binary(M, utf8)};
             {error, _} -> false
         end
-    end, code:modified_modules()).
+    end, Modified).
+
+%% gsh's own REPL evaluation modules. The package-interface export can leave
+%% compiled copies of them in the build, so :cc would otherwise report them.
+is_eval_module(Module) ->
+    lists:prefix("gsh_eval_", atom_to_list(Module)).
+
+
+%% The shell traps exits, so a crash in a process spawned (and linked) from a
+%% REPL expression, e.g. `process.spawn(app.main)`, is reported instead of
+%% taking the shell down with it.
+trap_exits() ->
+    process_flag(trap_exit, true),
+    nil.
+
+%% Exit signals from linked processes since the last prompt, as
+%% [{<<"<0.113.0>">>, <<"reason">>}]. Normal exits are dropped.
+drain_exits() ->
+    drain_exits([]).
+
+drain_exits(Acc) ->
+    receive
+        {'EXIT', _From, normal} ->
+            drain_exits(Acc);
+        {'EXIT', From, Reason} ->
+            Entry = {unicode:characters_to_binary(io_lib:format("~p", [From])),
+                     unicode:characters_to_binary(io_lib:format("~p", [Reason]))},
+            drain_exits([Entry | Acc])
+    after 0 ->
+        lists:reverse(Acc)
+    end.
+
+
+%% ---------------------------------------------------------------------------
+%% Output proxy
+%%
+%% While the shell waits at its prompt the terminal is in raw mode, where a
+%% bare "\n" moves down a line without returning to column 0, so output from
+%% background processes drifts to the right ("staircasing"). Processes started
+%% through the shell (booted apps, anything spawned by REPL code) get this
+%% proxy as their group leader. It writes line endings as "\r\n", like
+%% terminal.print does for the shell's own output, and forwards everything
+%% else to the real group leader unchanged.
+%% ---------------------------------------------------------------------------
+
+start_output_proxy() ->
+    Real = group_leader(),
+    put(gsh_real_group_leader, Real),
+    put(gsh_output_proxy, spawn(fun() -> proxy_loop(Real, #{}) end)),
+    nil.
+
+%% Routes this process's output, and the group leader that processes spawned
+%% from now on inherit, through the proxy (true) or straight to the terminal
+%% (false). The shell switches it on only while booting apps and evaluating,
+%% so its own line editor keeps talking to the terminal directly.
+use_output_proxy(On) ->
+    Key = case On of
+        true -> gsh_output_proxy;
+        false -> gsh_real_group_leader
+    end,
+    case get(Key) of
+        undefined -> ok;
+        GroupLeader -> group_leader(GroupLeader, self())
+    end,
+    nil.
+
+%% Forwards requests without waiting for their replies, so a pending read
+%% never holds up output from other processes.
+proxy_loop(Real, Pending) ->
+    receive
+        {io_request, From, ReplyAs, Request} ->
+            Ref = make_ref(),
+            Real ! {io_request, self(), Ref, crlf_request(Request)},
+            proxy_loop(Real, Pending#{Ref => {From, ReplyAs}});
+        {io_reply, Ref, Reply} ->
+            case maps:take(Ref, Pending) of
+                {{From, ReplyAs}, Rest} ->
+                    From ! {io_reply, ReplyAs, Reply},
+                    proxy_loop(Real, Rest);
+                error ->
+                    proxy_loop(Real, Pending)
+            end;
+        _Other ->
+            proxy_loop(Real, Pending)
+    end.
+
+crlf_request(Request) ->
+    try
+        case Request of
+            {put_chars, Enc, Chars} -> {put_chars, Enc, crlf(Chars, Enc)};
+            {put_chars, Enc, M, F, A} -> {put_chars, Enc, crlf(apply(M, F, A), Enc)};
+            {put_chars, Chars} -> {put_chars, crlf(Chars, latin1)};
+            {put_chars, M, F, A} -> {put_chars, crlf(apply(M, F, A), latin1)};
+            {requests, Requests} -> {requests, [crlf_request(R) || R <- Requests]};
+            _ -> Request
+        end
+    catch
+        _:_ -> Request
+    end.
+
+crlf(Chars, Encoding) ->
+    Bin = case Encoding of
+        unicode ->
+            case unicode:characters_to_binary(Chars) of
+                B when is_binary(B) -> B;
+                _ -> throw(invalid)
+            end;
+        latin1 ->
+            iolist_to_binary(Chars)
+    end,
+    Normalised = binary:replace(Bin, <<"\r\n">>, <<"\n">>, [global]),
+    binary:replace(Normalised, <<"\n">>, <<"\r\n">>, [global]).

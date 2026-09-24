@@ -1,17 +1,17 @@
 // The `evaluator` module is the core module of the GSH REPL.
 //
-// Because Gleam is statically typed and compiled, we cannot evaluate raw AST 
-// dynamically like Elixir's IEx. Instead, this module acts as a synthetic runtime, 
-// taking the user's input, injecting historical state (imports, bindings, types, functions), 
+// Because Gleam is statically typed and compiled, we cannot evaluate raw AST
+// dynamically like Elixir's IEx. Instead, this module acts as a synthetic runtime,
+// taking the user's input, injecting historical state (imports, bindings, types, functions),
 // and generating a unique `gsh_eval_X.gleam` file for execution.
 //
 // **Key Capabilities:**
-// * **Token Routing:** Uses `glexer` to parse input and accurately classify the statement 
+// * **Token Routing:** Uses `glance` to parse input and accurately classify the statement
 //   (import, type, function, binding, or raw expression).
-// * **Side-Effect Caching:** Wraps every variable assignment in an Erlang Process Dictionary 
-//   check, ensuring side effects (like `io.println`) execute exactly once per session even 
+// * **Side-Effect Caching:** Wraps every variable assignment in an Erlang Process Dictionary
+//   check, ensuring side effects (like `io.println`) execute exactly once per session even
 //   as the file is continually recompiled.
-// * **Cache Collision Prevention:** Appends the `prompt_count` to module names to 
+// * **Cache Collision Prevention:** Appends the `prompt_count` to module names to
 //   guarantee the Erlang VM loads fresh bytecode from disk on every execution.
 
 // src/gsh/internal/evaluator/evaluator.gleam
@@ -29,6 +29,7 @@ import gsh/internal/evaluator/result.{
 import gsh/internal/evaluator/runner
 import gsh/internal/evaluator/source
 import gsh/internal/evaluator/style
+import gsh/internal/evaluator/target.{type Target}
 import gsh/internal/runtime/runtime
 import simplifile
 
@@ -40,7 +41,7 @@ pub fn evaluate(
   functions: List(#(String, String)),
   debug: Bool,
   prompt_count: Int,
-  remote_node: option.Option(String),
+  target: Target,
 ) -> Evaluation {
   let module_name = "gsh_eval_" <> int.to_string(prompt_count)
   let evaluator_path = "src/" <> module_name <> ".gleam"
@@ -146,7 +147,7 @@ pub fn evaluate(
         is_type,
         is_function,
         False,
-        remote_node,
+        target,
       )
     }
   }
@@ -167,7 +168,7 @@ fn evaluate_loop(
   is_type: Bool,
   is_function: Bool,
   bindings_pruned: Bool,
-  remote_node: option.Option(String),
+  target: Target,
 ) -> Evaluation {
   // 1. Drop the historical version if we are redefining it right now!
   let clean_functions = case is_function, parsed_def_name {
@@ -201,7 +202,9 @@ fn evaluate_loop(
   case simplifile.write(to: evaluator_path, contents: source) {
     Ok(_) -> {
       let start_time = runtime.system_time()
-      let result = runner.run(parsed_binding, module_name, input, remote_node)
+      let is_definition = is_import || is_type || is_function
+      let result =
+        runner.run(parsed_binding, module_name, input, is_definition, target)
       let elapsed_us = runtime.system_time() - start_time
       let _ = simplifile.delete(evaluator_path)
 
@@ -278,7 +281,7 @@ fn evaluate_loop(
                     is_type,
                     is_function,
                     True,
-                    remote_node,
+                    target,
                   )
                 }
                 None -> result
@@ -389,6 +392,9 @@ fn imports_source(imports: List(String)) -> String {
     <> "fn gsh_store_cache(key: String, fallback: fn() -> a) -> a\n\n"
     <> "@external(erlang, \"gsh@internal@runtime@runtime\", \"pid_from_string\")\n"
     <> "fn gsh_pid_from_string(id: String) -> a\n\n"
+    // Reads the value passed to `pry`, from inside the paused process.
+    <> "@external(erlang, \"gsh_pry\", \"value\")\n"
+    <> "fn gsh_pry_value(id: Int) -> a\n\n"
     <> "import simplifile\n\n"
 
   let merged = parser.merge_imports(imports)

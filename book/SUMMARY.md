@@ -2,5 +2,5 @@
 
 - [ℹ️ About](index.md)
 - [👶 Basics](1_basics.md)
-- [🧬 Builtins](2_builtins.md)
-- [🎛️ REPL Driven Dev.]()
+- [🎛️ Prying](2_prying.md)
+- [🤝 Contributing](3_contributing.md)

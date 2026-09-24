@@ -8,9 +8,8 @@
 
 import etch/erlang/tty
 import gleam/dynamic.{type Dynamic}
-import gleam/erlang/atom.{type Atom}
+import gleam/erlang/atom
 import gleam/erlang/process
-import gleam/string
 
 /// Returns the current monotonic system time in microseconds.
 @external(erlang, "ffi", "system_time")
@@ -57,7 +56,8 @@ pub fn get_args() -> List(String)
 @external(erlang, "ffi", "boot_app")
 pub fn boot_app(module: String) -> Result(Dynamic, String)
 
-/// Converts a formatted string PID representation (e.g., `"<0.83.0>"`) into a native Erlang `Pid` reference.
+/// Converts a PID string into a native Erlang `Pid`.
+/// Accepts both `"<0.83.0>"` and `"0.83.0"`.
 @external(erlang, "ffi", "pid_from_string")
 pub fn pid_from_string(pid: String) -> process.Pid
 
@@ -83,26 +83,11 @@ pub fn compile_and_load(
 @external(erlang, "ffi", "run_entry")
 pub fn run_entry(module: String, function: String) -> Result(Dynamic, Dynamic)
 
-@external(erlang, "code", "purge")
-fn ffi_purge(module: Atom) -> Bool
-
-@external(erlang, "code", "load_file")
-fn ffi_load_file(module: Atom) -> Dynamic
-
-/// Forces the Erlang code server to purge its active RAM cache for a module and reload 
-/// the latest compiled artifact from disk.
-/// 
-/// Automatically translates Gleam module paths (e.g., `gleam/httpc`) to their BEAM 
-/// atom equivalents (`gleam@httpc`).
-pub fn hot_reload(module_path: String) -> Nil {
-  // Convert Gleam paths ("gleam/httpc") to Erlang modules ("gleam@httpc")
-  let erl_name = string.replace(module_path, "/", "@")
-  let mod_atom = atom.create(erl_name)
-
-  let _ = ffi_purge(mod_atom)
-  let _ = ffi_load_file(mod_atom)
-  Nil
-}
+/// Reloads every module whose compiled `.beam` on disk differs from the loaded
+/// version (like IEx's `recompile`), and returns the Erlang names of the modules
+/// it reloaded, e.g. `["t4z3r_web@router"]`. Unchanged modules are left alone.
+@external(erlang, "ffi", "reload_modified")
+pub fn reload_modified() -> List(String)
 
 @external(erlang, "ffi", "ensure_code_paths")
 pub fn ensure_code_paths() -> Nil
@@ -114,7 +99,7 @@ pub fn start_network(name: String, name_type: String) -> Result(Nil, String)
 pub fn set_cookie(cookie: String) -> Nil
 
 /// Compiles a local Erlang file to bytecode, pushes the binary across the network 
-/// to a remote node, and executes it securely.
+/// to a remote node, and runs it inside a persistent evaluation agent there.
 @external(erlang, "ffi", "rpc_compile_and_run")
 pub fn rpc_compile_and_run(
   node: String,
@@ -127,6 +112,21 @@ pub fn rpc_compile_and_run(
 @external(erlang, "ffi", "ping_node")
 pub fn ping_node(node: String) -> Result(Nil, String)
 
-/// Reloads every module whose compiled .beam changed on disk; returns their names.
-@external(erlang, "ffi", "reload_modified")
-pub fn reload_modified() -> List(String)
+/// Makes the shell process trap exits, so crashes of processes linked to it
+/// (anything spawned from a REPL expression) are reported, not fatal.
+@external(erlang, "ffi", "trap_exits")
+pub fn trap_exits() -> Nil
+
+/// Crashes of linked processes since the last prompt, as `#(pid, reason)`.
+@external(erlang, "ffi", "drain_exits")
+pub fn drain_exits() -> List(#(String, String))
+
+/// Starts the output proxy that keeps output from background processes lined
+/// up while the terminal is in raw mode (see `ffi.erl`).
+@external(erlang, "ffi", "start_output_proxy")
+pub fn start_output_proxy() -> Nil
+
+/// Routes output from this process, and from processes it spawns from now on,
+/// through the output proxy (`True`) or straight to the terminal (`False`).
+@external(erlang, "ffi", "use_output_proxy")
+pub fn use_output_proxy(on: Bool) -> Nil

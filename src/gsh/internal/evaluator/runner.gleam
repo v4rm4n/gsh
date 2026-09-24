@@ -1,9 +1,9 @@
-// The `runner` module orchestrates the compilation and execution pipeline 
+// The `runner` module orchestrates the compilation and execution pipeline
 // for the shell's dynamically generated REPL modules.
 //
-// It acts as the bridge between the host filesystem and the Erlang VM, 
-// utilizing `shellout` to invoke the Gleam compiler for static analysis 
-// and Erlang generation, and utilizing the `runtime` FFI to dynamically compile, 
+// It acts as the bridge between the host filesystem and the Erlang VM,
+// utilizing `shellout` to invoke the Gleam compiler for static analysis
+// and Erlang generation, and utilizing the `runtime` FFI to dynamically compile,
 // load, and execute the resulting code directly in memory.
 
 // src/gsh/internal/evaluator/runner.gleam
@@ -17,9 +17,16 @@ import gsh/internal/evaluator/result.{
   type Evaluation, CompileError, Evaluation, NoError, RuntimeError,
 }
 import gsh/internal/evaluator/style
+import gsh/internal/evaluator/target.{type Target, Local, Pried, Remote}
 import gsh/internal/evaluator/types
+import gsh/internal/runtime/pry
 import gsh/internal/runtime/runtime
 import shellout
+import simplifile
+
+/// Written after every definition (fn/type/import). Later prompts use it to
+/// show the types of calls to REPL functions and constructors.
+const interface_path = "build/dev/erlang/gsh_eval/package_interface.json"
 
 /// Zero-cost cast to force the Erlang RPC payload back into a Gleam String.
 @external(erlang, "gleam_stdlib", "identity")
@@ -35,11 +42,19 @@ pub fn build_project() -> Result(String, #(Int, String)) {
   ])
 }
 
+/// Deletes a package interface left over from an earlier session. It would
+/// describe that session's REPL functions and types, not this one's.
+pub fn clear_interface() -> Nil {
+  let _ = simplifile.delete(interface_path)
+  Nil
+}
+
 pub fn run(
   binding: Option(Binding),
   module_name: String,
   source_input: String,
-  remote_node: Option(String),
+  is_definition: Bool,
+  target: Target,
 ) -> Evaluation {
   let args = [
     "compile-package", "--target", "erlang", "--package", ".", "--out",
@@ -67,34 +82,31 @@ pub fn run(
       let erl_path =
         "build/dev/erlang/gsh_eval/_gleam_artefacts/" <> module_name <> ".erl"
 
-      // Branch execution: Local RAM vs Remote RPC Injection
-      let exec_result = case remote_node {
-        option.Some(target) ->
-          runtime.rpc_compile_and_run(
-            target,
-            erl_path,
-            module_name,
-            "gsh_entry",
-          )
-        option.None -> {
+      let exec_result = case target {
+        Local ->
           case runtime.compile_and_load(erl_path, module_name) {
             Ok(_) -> runtime.run_entry(module_name, "gsh_entry")
             Error(err) -> Error(dynamic.string(err))
           }
-        }
+        Remote(node) ->
+          runtime.rpc_compile_and_run(node, erl_path, module_name, "gsh_entry")
+        Pried(pid, id) -> pry.run(pid, id, erl_path, module_name, "gsh_entry")
       }
 
       case exec_result {
         Ok(returned_dyn) -> {
+          // Definitions print nothing themselves, but exporting the interface
+          // (~400ms) lets later prompts type calls to what they defined.
+          case is_definition {
+            True -> export_interface()
+            False -> Nil
+          }
+
           // Bypass decoders and forcibly cast the Dynamic back to a String.
           let raw_val = unsafe_to_string(returned_dyn)
 
-          // No package interface is exported: definitions (fn/type/import)
-          // print nothing, so exporting one cost ~400ms per definition for an
-          // annotation that was never shown. Expression types come from
-          // inference over the input alone.
           let type_suffix = case
-            types.infer_or_get_type("", module_name, source_input)
+            types.infer_or_get_type(read_interface(), module_name, source_input)
           {
             Ok("Nil") -> ""
             Ok(t) -> style.type_note(" : " <> t)
@@ -133,5 +145,27 @@ pub fn run(
           )
       }
     }
+  }
+}
+
+/// Re-exports the package interface, used to type calls to project and REPL
+/// functions. Runs after definitions, after `:cc`, and once at startup.
+pub fn export_interface() -> Nil {
+  // Remove the old interface first, so a failed export can't leave a stale one.
+  let _ = simplifile.delete(interface_path)
+  let _ =
+    shellout.command(
+      run: "gleam",
+      with: ["export", "package-interface", "--out", interface_path],
+      in: ".",
+      opt: [],
+    )
+  Nil
+}
+
+fn read_interface() -> String {
+  case simplifile.read(interface_path) {
+    Ok(json) -> json
+    Error(_) -> ""
   }
 }
