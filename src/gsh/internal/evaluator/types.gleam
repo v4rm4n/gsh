@@ -180,6 +180,12 @@ pub fn package_interface_decoder() -> decode.Decoder(PackageInterface) {
 // INFERENCE & LOOKUP PIPELINE
 // =============================================================================
 
+/// Infers an expression's type from its source, using the package interface
+/// to look up REPL functions and constructors.
+///
+/// `gsh_entry`'s own return type is never consulted: every entry function
+/// returns a String, and the interface can describe a same-named module from
+/// an earlier prompt or session.
 pub fn infer_or_get_type(
   json_string: String,
   _module_name: String,
@@ -264,39 +270,66 @@ fn infer_complex_expression(
   }
 }
 
-// Helper to isolate the math guessing
+// Helper to isolate the operator guessing. Comparisons and boolean operators
+// come first: `1 + 1 == 2` is a Bool, whatever arithmetic it contains.
 fn guess_math_operators(clean_expr: String) -> Result(String, Nil) {
-  case
-    string.contains(clean_expr, "+.")
-    || string.contains(clean_expr, "-.")
-    || string.contains(clean_expr, "*.")
-    || string.contains(clean_expr, "/.")
-  {
-    True -> Ok("Float")
+  let is_bool =
+    list.any(
+      [
+        " == ", " != ", " && ", " || ", " > ", " < ", " >= ", " <= ", " >. ",
+        " <. ", " >=. ", " <=. ",
+      ],
+      string.contains(clean_expr, _),
+    )
+  case is_bool {
+    True -> Ok("Bool")
     False ->
       case
-        string.contains(clean_expr, "+")
-        || string.contains(clean_expr, "-")
-        || string.contains(clean_expr, "*")
-        || string.contains(clean_expr, "/")
-        || string.contains(clean_expr, "%")
+        string.contains(clean_expr, "+.")
+        || string.contains(clean_expr, "-.")
+        || string.contains(clean_expr, "*.")
+        || string.contains(clean_expr, "/.")
       {
-        True -> Ok("Int")
+        True -> Ok("Float")
         False ->
-          case string.contains(clean_expr, "<>") {
-            True -> Ok("String")
+          case
+            string.contains(clean_expr, "+")
+            || string.contains(clean_expr, "-")
+            || string.contains(clean_expr, "*")
+            || string.contains(clean_expr, "/")
+            || string.contains(clean_expr, "%")
+          {
+            True -> Ok("Int")
             False ->
-              case
-                string.contains(clean_expr, "==")
-                || string.contains(clean_expr, "!=")
-                || string.contains(clean_expr, "&&")
-                || string.contains(clean_expr, "||")
-              {
-                True -> Ok("Bool")
+              case string.contains(clean_expr, "<>") {
+                True -> Ok("String")
                 False -> Error(Nil)
               }
           }
       }
+  }
+}
+
+/// True if `expr` is exactly one call, like `f(x)` or `m.f(x, g(y))`, rather
+/// than an expression that merely contains one, like `f(x) > 0`.
+fn is_single_call(expr: String) -> Bool {
+  case string.split_once(expr, "(") {
+    Error(_) -> False
+    Ok(#(_, args)) -> closes_at_end(string.to_graphemes(args), 1)
+  }
+}
+
+fn closes_at_end(chars: List(String), depth: Int) -> Bool {
+  case chars {
+    [] -> False
+    [")"] -> depth == 1
+    ["(", ..rest] -> closes_at_end(rest, depth + 1)
+    [")", ..rest] ->
+      case depth {
+        1 -> False
+        _ -> closes_at_end(rest, depth - 1)
+      }
+    [_, ..rest] -> closes_at_end(rest, depth)
   }
 }
 
@@ -316,10 +349,11 @@ fn lookup_in_package_interface(
       case lookup_constructor(pi, call_target) {
         Ok(t) -> Ok(t)
         Error(_) ->
+          // 2. Check function return types (e.g. "a()", "config.load()").
           // Only a call has its function's return type: a bare name is a
           // variable, and would otherwise get the return type of any function
           // that happens to share its name.
-          case string.contains(expr, "(") {
+          case is_single_call(expr) {
             True -> lookup_function_return(pi, call_target)
             False -> Error(Nil)
           }

@@ -1,6 +1,14 @@
 # GSH
 
 - [ℹ️ About](index.md)
+- [🔮 GSH Quirks]()
+  - [|> Pipelines](5_quirks/1_pipelines.md)
+  - [🫧 Use](5_quirks/2_use.md)
+  - [🪪 Constants](5_quirks/3_constants.md)
+  - [🌮 Erlang FFI](5_quirks/4_erlang.md)
+  - [🧵 Background Work](5_quirks/5_background_work.md)
+  - [🎙️ Talking to Processes](5_quirks/6_subjects.md)
+  - [📛 Name Clashes](5_quirks/7_name_clashes.md)
 - [👶 Basics](1_basics.md)
 - [🎛️ Prying](2_prying.md)
 - [🧩 Integrations](3_integrations.md)
