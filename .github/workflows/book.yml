@@ -5,7 +5,10 @@ on:
     branches:
       - main
     paths:
-      - "build/gleebook/**"
+      - "book/**"
+      - "gleam.toml"
+      - "manifest.toml"
+      - ".github/workflows/book.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,6 +28,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          gleam-version: "1.16.0"
+          rebar3-version: "3"
+      - run: gleam deps download
+      - run: gleam run -m gleebook -- build
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
