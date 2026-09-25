@@ -22,7 +22,10 @@ Everyday use of the shell: evaluating expressions and reading compiler errors, s
 2. **[Prying](2_prying.md)**  
 REPL-driven debugging: pause a live process at a `pry` call in your code, attach the shell to it, evaluate code inside that process, and let it continue. Also covers handling several paused processes, switching pry points off, the safety nets that keep your session alive, and the current limitations.
 ---
-3. **[Contributing](3_contributing.md)**  
+3. **[Integrations](3_integrations.md)**  
+Using GSH from your editor. Covers gleam-repl for Emacs: installing it, sending code from your source files to the REPL, configuring it, and working around its known issues.
+---
+4. **[Contributing](4_contributing.md)**  
 How to report bugs, suggest features, set up a local copy of GSH, and send a pull request, including what makes a contribution easy to accept.
 
 ## Reading the Examples
@@ -33,4 +36,4 @@ How to report bugs, suggest features, set up a local copy of GSH, and send a pul
 
 ## Contributing
 
-GSH and this guide are open source, and there's plenty of room to grow. Found a bug, a confusing page or an outdated transcript? Have an idea for the shell? See **[Contributing](3_contributing.md)** for how to open an issue or send a pull request to [github.com/v4rm4n/gsh](https://github.com/v4rm4n/gsh).
+GSH and this guide are open source, and there's plenty of room to grow. Found a bug, a confusing page or an outdated transcript? Have an idea for the shell? See **[Contributing](4_contributing.md)** for how to open an issue or send a pull request to [github.com/v4rm4n/gsh](https://github.com/v4rm4n/gsh).
