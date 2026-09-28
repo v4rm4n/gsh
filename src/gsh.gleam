@@ -646,6 +646,27 @@ fn handle_input(input: String, state: ShellState) -> Nil {
       )
     }
 
+    command.OsCommand(cmd) -> {
+      case cmd {
+        "" -> terminal.println("usage: :sh <command> (e.g. :sh git status)")
+        _ -> {
+          let assert Ok(_) = tty.exit_raw()
+
+          let output = runtime.exec_os(cmd)
+
+          io.print(output)
+
+          let assert Ok(_) = tty.enter_raw()
+
+          Nil
+        }
+      }
+
+      shell_loop(
+        ShellState(..state, prompt_count: state.prompt_count + 1, history:),
+      )
+    }
+
     command.NotCommand -> {
       let is_duplicate_import =
         string.starts_with(input, "import ")

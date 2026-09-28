@@ -56,6 +56,8 @@ pub type CommandResult {
   /// (e.g., `h gleam/list` or `h list.map`).
   Help(String)
 
+  OsCommand(String)
+
   /// The input did not match any built-in commands and should be sent 
   /// to the standard Gleam evaluator.
   NotCommand
@@ -76,66 +78,75 @@ pub fn handle(
 ) -> CommandResult {
   let trimmed = string.trim(input)
 
-  case trimmed {
-    ":d" | ":debug" -> ToggleDebug
-
-    ":logs" -> Logs
-
-    ":obs" -> Obs
-
-    ":h" | ":help" -> {
-      help.show()
-      Handled
+  case
+    string.starts_with(trimmed, ":sh") || string.starts_with(trimmed, ":exec")
+  {
+    True -> {
+      let cmd = string.drop_start(trimmed, 4) |> string.trim()
+      OsCommand(cmd)
     }
+    False ->
+      case trimmed {
+        ":d" | ":debug" -> ToggleDebug
 
-    ":v" | ":version" -> {
-      version.show()
-      Handled
-    }
+        ":logs" -> Logs
 
-    ":q" | ":quit" -> Exit
+        ":obs" -> Obs
 
-    ":c" | ":clear" -> Clear
-
-    ":cc" | ":compile" -> Compile
-
-    ":b" | ":bindings" -> {
-      bindings.show(bindings)
-      Handled
-    }
-
-    ":pry" -> PryAttach
-
-    ":pry list" | ":pry ls" -> PryList
-
-    ":pry on" -> PryEnable(True)
-
-    ":pry off" -> PryEnable(False)
-
-    ":continue" | ":cont" -> PryContinue
-
-    ":hs" | ":history" -> {
-      history.show(history_entries)
-      Handled
-    }
-
-    ":pry " <> rest ->
-      case int.parse(string.trim(rest)) {
-        Ok(id) -> PryAttachId(id)
-        Error(_) -> {
-          terminal.println("Usage: :pry [list | <id> | on | off]")
+        ":h" | ":help" -> {
+          help.show()
           Handled
         }
-      }
 
-    _ -> {
-      case string.starts_with(trimmed, ":h ") {
-        True -> {
-          let target = string.replace(trimmed, ":h ", "") |> string.trim()
-          Help(target)
+        ":v" | ":version" -> {
+          version.show()
+          Handled
         }
-        False -> NotCommand
+
+        ":q" | ":quit" -> Exit
+
+        ":c" | ":clear" -> Clear
+
+        ":cc" | ":compile" -> Compile
+
+        ":b" | ":bindings" -> {
+          bindings.show(bindings)
+          Handled
+        }
+
+        ":pry" -> PryAttach
+
+        ":pry list" | ":pry ls" -> PryList
+
+        ":pry on" -> PryEnable(True)
+
+        ":pry off" -> PryEnable(False)
+
+        ":continue" | ":cont" -> PryContinue
+
+        ":hs" | ":history" -> {
+          history.show(history_entries)
+          Handled
+        }
+
+        ":pry " <> rest ->
+          case int.parse(string.trim(rest)) {
+            Ok(id) -> PryAttachId(id)
+            Error(_) -> {
+              terminal.println("Usage: :pry [list | <id> | on | off]")
+              Handled
+            }
+          }
+
+        _ -> {
+          case string.starts_with(trimmed, ":h ") {
+            True -> {
+              let target = string.replace(trimmed, ":h ", "") |> string.trim()
+              Help(target)
+            }
+            False -> NotCommand
+          }
+        }
       }
-    }
   }
 }

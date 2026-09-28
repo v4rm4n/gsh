@@ -144,3 +144,29 @@ gsh(3)> type Struct {
 ...> ^X
 gsh(3)> 
 ```
+
+## 6. Executing Shell Commands
+
+You can bypass GSH to execute commands on the underlaying shell using the `:sh` built-in
+
+```gleam
+Erlang/OTP 28 [erts-16.2] [source] [64-bit] [smp:16:16] [ds:16:16:10] [async-threads:1] [jit:ns]
+
+Interactive Gleam (GSH 1.3.0) - press Ctrl+C to exit (type :h ENTER for help)
+gsh(1)> :sh whoami
+desktop-fse9kse\v4rm4n
+gsh(2)> :sh git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   src/gsh.gleam
+        modified:   src/gsh/internal/command/router.gleam
+        modified:   src/gsh/internal/runtime/ffi.erl
+        modified:   src/gsh/internal/runtime/runtime.gleam
+
+no changes added to commit (use "git add" and/or "git commit -a")
+gsh(3)>
+````

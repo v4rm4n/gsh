@@ -130,3 +130,7 @@ pub fn start_output_proxy() -> Nil
 /// through the output proxy (`True`) or straight to the terminal (`False`).
 @external(erlang, "ffi", "use_output_proxy")
 pub fn use_output_proxy(on: Bool) -> Nil
+
+/// Executes an OS shell command natively and returns standard output.
+@external(erlang, "ffi", "exec_os")
+pub fn exec_os(command: String) -> String

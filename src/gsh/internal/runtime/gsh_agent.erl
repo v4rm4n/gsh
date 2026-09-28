@@ -13,19 +13,36 @@ init(Owner) ->
 
 loop(OwnerRef) ->
     receive
+        {'DOWN', OwnerRef, process, _, _} ->
+            ok;
+
         {run, From, Ref, Module, Binary, Function} ->
             code:purge(Module),
             Reply =
                 case code:load_binary(Module, "", Binary) of
                     {module, Module} ->
                         try {ok, Module:Function()}
-                        catch Class:Reason:Stack -> {error, {Class, Reason, Stack}}
+                        catch 
+                            error:undef:Stacktrace ->
+                                case Stacktrace of
+                                    [{MissingMod, MissingFunc, _, _} | _] ->
+                                        RawMod = atom_to_binary(MissingMod, utf8),
+                                        ModStr = binary:replace(RawMod, <<"@">>, <<"/">>, [global]),
+                                        FuncStr = atom_to_binary(MissingFunc, utf8),
+                                        {error, <<"\e[31merror:\e[0m Undefined module or function '", 
+                                                ModStr/binary, ".", FuncStr/binary, "()'\n",
+                                                "\e[33mHint:\e[0m Did you forget to compile your project with :cc?">>};
+                                    _ ->
+                                        {error, <<"\e[31merror:\e[0m Undefined module or function call.\n",
+                                                "\e[33mHint:\e[0m Did you forget to compile your project with :cc?">>}
+                                end;
+                            Class:Reason:Stack -> 
+                                {error, {Class, Reason, Stack}}
                         end;
                     Error -> {error, {load_failed, Error}}
                 end,
             From ! {Ref, Reply},
             loop(OwnerRef);
-        {'DOWN', OwnerRef, process, _, _} ->
-            %% gsh quit or the connection dropped: exit and free the cached bindings
-            ok
+
+        stop -> ok
     end.

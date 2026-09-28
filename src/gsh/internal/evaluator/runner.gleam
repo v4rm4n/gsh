@@ -10,7 +10,6 @@
 
 import gleam/dynamic
 import gleam/option.{type Option, None}
-import gleam/string
 import gsh/internal/evaluator/binding.{type Binding}
 import gsh/internal/evaluator/formatter
 import gsh/internal/evaluator/result.{
@@ -130,11 +129,11 @@ pub fn run(
           )
         }
 
-        Error(err) ->
+        Error(err) -> {
+          let err_str = unsafe_to_string(err)
+
           Evaluation(
-            output: "Execution Error: "
-              <> formatter.format_error(string.inspect(err))
-              <> "\n",
+            output: err_str <> "\n",
             success: False,
             error_kind: RuntimeError,
             new_binding: None,
@@ -143,6 +142,7 @@ pub fn run(
             new_function: None,
             active_bindings: None,
           )
+        }
       }
     }
   }

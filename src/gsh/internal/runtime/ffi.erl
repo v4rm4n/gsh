@@ -26,7 +26,8 @@
     trap_exits/0,
     drain_exits/0,
     start_output_proxy/0,
-    use_output_proxy/1
+    use_output_proxy/1,
+    exec_os/1
 ]).
 
 %% Returns the current system time in microseconds to guarantee 
@@ -184,6 +185,21 @@ run_entry(ModuleBin, FunctionBin) ->
         Result = Module:Function(),
         {ok, Result}
     catch
+        error:undef:Stacktrace ->
+            Msg = case Stacktrace of
+                [{MissingMod, MissingFunc, _, _} | _] ->
+                    RawMod = atom_to_binary(MissingMod, utf8),
+                    ModStr = binary:replace(RawMod, <<"@">>, <<"/">>, [global]),
+                    FuncStr = atom_to_binary(MissingFunc, utf8),
+                    <<"\e[31merror:\e[0m Undefined module or function '", 
+                      ModStr/binary, ".", FuncStr/binary, "()'\n",
+                      "\e[33mHint:\e[0m Did you forget to compile your project with :cc?">>;
+                _ ->
+                    <<"\e[31merror:\e[0m Undefined module or function call.\n",
+                      "\e[33mHint:\e[0m Did you forget to compile your project with :cc?">>
+            end,
+            {error, Msg};
+
         Class:Reason:Stacktrace ->
             FormattedError = unicode:characters_to_binary(
                 io_lib:format("~p:~p~n~p", [Class, Reason, Stacktrace])
@@ -197,6 +213,7 @@ ensure_code_paths() ->
         Paths -> lists:foreach(fun(P) -> code:add_patha(P) end, Paths)
     end,
     ok.
+
 
 start_network(NameBin, NameTypeBin) ->
     NodeName = binary_to_atom(NameBin, utf8),
@@ -427,3 +444,9 @@ crlf(Chars, Encoding) ->
     end,
     Normalised = binary:replace(Bin, <<"\r\n">>, <<"\n">>, [global]),
     binary:replace(Normalised, <<"\n">>, <<"\r\n">>, [global]).
+
+%% Executes an OS command and returns the raw output as a binary string
+exec_os(CmdBin) ->
+    CmdStr = binary_to_list(CmdBin),
+    Output = os:cmd(CmdStr),
+    unicode:characters_to_binary(Output).
