@@ -1,5 +1,5 @@
 name = "gsh"
-version = "1.4.1"
+version = "1.4.2"
 
 description = "GSH is an interactive REPL for the Gleam Programming Language written in Gleam and Erlang."
 licences = ["Apache-2.0"]
