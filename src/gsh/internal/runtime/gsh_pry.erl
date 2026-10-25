@@ -133,7 +133,7 @@ start_server(Owner) ->
     case whereis(?SERVER) of
         undefined -> ok;
         Old ->
-            catch unregister(?SERVER),
+            try unregister(?SERVER) catch _:_ -> ok end,
             exit(Old, kill)
     end,
     Pid = spawn(fun() ->
